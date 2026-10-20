@@ -27,6 +27,8 @@ class CausalPreprocessor:
     def _filter(self, block):
         if self.sos is None:
             return block
+        if np.isnan(block).any():
+            raise ValueError("causal filtering needs gap-free blocks; this data has NaN gaps")
         # sosfilt is forward-only: output at t depends on inputs <= t.
         # Each block starts from zero state, so the transient is dropped.
         return sosfilt(self.sos, block, axis=0)[self.filter_warmup :]
@@ -41,12 +43,14 @@ class CausalPreprocessor:
         main, ref = self._split_cols(filtered)
         self.W = None
         if ref is not None:
-            # Common-mode regression weights, estimated on train only.
+            # Common-mode regression weights, estimated on train only, on gap-free rows.
             design = np.column_stack([ref, np.ones(len(ref))])
-            self.W, *_ = np.linalg.lstsq(design, main, rcond=None)
+            ok = np.isfinite(design).all(axis=1) & np.isfinite(main).all(axis=1)
+            self.W, *_ = np.linalg.lstsq(design[ok], main[ok], rcond=None)
             main = main - design @ self.W
-        self.mean = main.mean(axis=0)
-        self.std = main.std(axis=0)
+        # Gaps (NaN) pass through untouched; windows touching them are dropped later.
+        self.mean = np.nanmean(main, axis=0)
+        self.std = np.nanstd(main, axis=0)
         self._fitted = True
         return self
 

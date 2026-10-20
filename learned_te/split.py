@@ -61,6 +61,31 @@ def time_split(series, gap, frac=(0.6, 0.2, 0.2)):
     )
 
 
+def day_split(sessions, test_ids=(), embargo=1, frac=(0.6, 0.2, 0.2)):
+    """Whole sessions (e.g. trading days) go to train, val or test, in time order.
+
+    Session ids must sort chronologically (e.g. "2025-07-03"). Without `test_ids`
+    the last frac[2] of sessions is test. `embargo` sessions are dropped before val
+    and before test, so the sets are separated in time. Here `gap` counts sessions,
+    not samples. Every block is a whole day, so windows never cross a day boundary.
+    """
+    keys = sorted(sessions)
+    if test_ids:
+        test_keys = sorted(set(test_ids) & set(keys))
+        rest = [k for k in keys if k < test_keys[0]] if test_keys else []
+        rest = rest[: max(0, len(rest) - embargo)]  # embargo before test
+    else:
+        n_test = max(1, int(round(frac[2] * len(keys))))
+        test_keys = keys[-n_test:]
+        rest = keys[: max(0, len(keys) - n_test - embargo)]
+    n_train = int(round(frac[0] / (frac[0] + frac[1]) * len(rest)))
+    train_keys, val_keys = rest[:n_train], rest[n_train + embargo :]
+    if not (train_keys and val_keys and test_keys):
+        raise ValueError(f"too few sessions for a train/val/test split with embargo={embargo}")
+    pick = lambda ks: [sessions[k] for k in ks]
+    return Split(pick(train_keys), pick(val_keys), pick(test_keys), embargo)
+
+
 def group_split(sessions, test_ids, gap, train_frac=0.75):
     """Hold out whole sessions for test; time-split the rest into train/val with a gap.
 

@@ -5,8 +5,11 @@
 Leakage-safe learned transfer entropy estimator:
 T̂_{X→Y} = ½ ln(MSE of f_Y / MSE of f_XY), evaluated once on a held-out test block.
 
-The [Colab notebook](notebooks/learned_te_colab.ipynb) runs everything below in the browser:
-simulated benchmarks, Alpaca crypto and stock data, and your own CSV.
+The transfer-entropy stage of the thesis that follows
+[entropy-gate-pipeline](https://github.com/Gaire-commits/entropy-gate-pipeline): does one stock's
+recent 5-minute move predict another's next move, beyond the target's own past and the market?
+The [Colab notebook](notebooks/learned_te_colab.ipynb) runs the synthetic controls, then the
+proposal's pairs (NVDA–AMD, V–MA, MSFT–GOOGL) on the thesis's cached SIP bars.
 
 | Step | What | Where |
 |---|---|---|
@@ -32,50 +35,46 @@ Input: an `(n, c)` array with columns `[X, Y, ref...]`, or `run(sessions={...}, 
 for multi-session data. Use `Config(ref_cols=(2,))` to regress out a reference channel and
 `Config(model="mlp")` for the nonlinear estimator.
 
-## Market data (Alpaca)
+## Market data: the thesis's 5-minute SIP bars
 
-[`market.py`](learned_te/market.py) fetches bars with `alpaca-py` and turns them into log
-returns in the `[X, Y, refs...]` column order the pipeline expects.
+[`market.py`](learned_te/market.py) reads the bars entropy-gate-pipeline already cached on Google
+Drive (`My Drive/entropy-gate-pipeline-data/data/bars_sip/5Min/<SYM>.parquet`, 503 S&P 500 stocks,
+2016-01-04 to 2026-10-12) and applies the thesis data rules:
 
-```bash
-pip install alpaca-py
-```
-
-Stock data needs Alpaca API keys (free paper-trading keys work with the default `feed="iex"`).
-They are read from the env vars `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY`, or from Colab
-secrets with the same names. Never paste keys into a notebook cell. Crypto bars need no keys.
+- **Fixed session grid.** Regular hours on a 5-minute grid per trading day. Missing bars stay as
+  gaps (NaN) and every window touching one is dropped, so a gap never shifts later bars. Early
+  closes end at 13:00, and a final day still in progress is dropped.
+- **Within-day returns.** No return spans the overnight gap.
+- **Market-neutral.** The market is the equal-weighted mean return across the universe at each bar,
+  as in the thesis (`leadlag.py`, `peers.py`). It is computed once, saved, and regressed out as a
+  reference column. The SIP cache holds stocks only, so SPY is not used.
+- **Inference by day.** With sessions, whole days go to train, validation or test in time order
+  (`day_split`, one embargo day between sets; the last 20% of days is the hold-out), and
+  confidence intervals resample whole test days.
+- **Feeds never mix.** Loading refuses a cache whose metadata says it is not SIP.
+- **Many pairs.** [`multiple.py`](learned_te/multiple.py) applies Benjamini-Hochberg
+  false-discovery control across directions.
 
 ```python
 from learned_te import Config, report
-from learned_te.market import fetch_bars, log_returns, to_array, intraday_sessions, last_sessions
+from learned_te.market import THESIS_SIP_DIR, day_sessions, load_cached_closes, market_returns
 
-# Daily: one continuous series. SPY is a reference column, so the market factor
-# (shared noise for any two stocks) is regressed out.
-prices = fetch_bars(["AAPL", "MSFT", "SPY"], "2016-01-01", "2025-12-31", "1Day")
-data = to_array(log_returns(prices), x="AAPL", y="MSFT", refs=["SPY"])
-rep = report(data, Config(ref_cols=(2,)))
-
-# Intraday: one session per trading day, so no window spans the overnight gap,
-# and the most recent days are held out whole as test.
-prices = fetch_bars(["AAPL", "MSFT", "SPY"], "2025-06-01", "2025-09-30", "1Min")
-sessions = intraday_sessions(prices, x="AAPL", y="MSFT", refs=["SPY"])
-rep = report(sessions, Config(ref_cols=(2,)), test_ids=last_sessions(sessions, 0.2))
-
-# Crypto, no keys needed
-prices = fetch_bars(["BTC/USD", "ETH/USD"], "2025-01-01", "2025-10-01", "1Hour", asset_class="crypto")
-rep = report(to_array(log_returns(prices), "BTC/USD", "ETH/USD"))
+market = market_returns(THESIS_SIP_DIR, cache_file=".../outputs/transfer_entropy/market_5min.parquet")
+closes = load_cached_closes(THESIS_SIP_DIR, ["NVDA", "AMD"])
+sessions = day_sessions(closes, x="NVDA", y="AMD", market=market)  # columns [NVDA, AMD, market]
+rep = report(sessions, Config(k=6, l=6, ref_cols=(2,), n_surrogates=200))
 print(rep["verdict"])
 ```
 
-Things to keep in mind with returns:
-- Effects are small (often around 0.001 nats), so you need long histories. A few hundred
-  daily bars is too few; use years of daily data or intraday bars.
-- Markets are non-stationary. A result that holds on one period may not hold on another, so
-  re-run on separate periods.
-- `report()` checks are scaled to the estimate's own confidence interval, so they stay
-  meaningful at these small effect sizes.
-- Like any TE result, a positive finding is predictive information, not causation, and not a
-  trading signal on its own.
+`k = 6` bars is 30 minutes of the target's own history, so its own short-term reversal (the
+thesis's E5 result) is already in the baseline and cannot pass for transfer.
+
+For symbols outside the cache, `fetch_bars` downloads the same 5-minute SIP bars from Alpaca
+(`pip install alpaca-py`; keys from env vars or Colab secrets, never from code).
+
+Keep in mind: effects in returns are tiny, markets are non-stationary, and a positive result is
+predictive information, not causation or a trading signal. `report()` checks scale with the
+estimate's own confidence interval, so they stay meaningful at these sizes.
 
 ## Noise-invariance training (`model="invariant"`)
 

@@ -53,7 +53,7 @@ def noise_sweep(data, cfg, test_ids=(), sigmas=(0.0, 0.5, 1.0), channel=1, seed=
 
     def add(s, sigma):
         noisy = s.copy()
-        noisy[:, channel] += rng.normal(0, sigma * s[:, channel].std(), len(s))
+        noisy[:, channel] += rng.normal(0, sigma * np.nanstd(s[:, channel]), len(s))
         return noisy
 
     return {sig: _run(_map(data, lambda s: add(s, sig)), cfg, test_ids).te for sig in sigmas}

@@ -5,7 +5,14 @@ from sklearn.neighbors import NearestNeighbors
 from .windows import Windows, windows_from_blocks
 
 
-def local_permutation(w, rng, n_neighbors=10):
+def neighbor_index(w, n_neighbors=10):
+    """Each window's nearest neighbors in Y-history space (excluding itself). Depends only
+    on Y history, which surrogates never change, so it is computed once per null."""
+    nn = NearestNeighbors(n_neighbors=n_neighbors + 1).fit(w.yh)
+    return nn.kneighbors(w.yh, return_distance=False)[:, 1:]
+
+
+def local_permutation(w, rng, n_neighbors=10, neighbors=None):
     """Swap X history only between samples with similar Y history.
 
     A plain shuffle also breaks the X <-> observed-Y-history dependence and makes
@@ -13,9 +20,8 @@ def local_permutation(w, rng, n_neighbors=10):
     so a leak through the *unobserved* true Y_t is still (correctly, for that
     hypothesis) significant -- the diagnostics, not the null, have to catch it.
     """
-    nn = NearestNeighbors(n_neighbors=n_neighbors + 1).fit(w.yh)
-    _, idx = nn.kneighbors(w.yh)
-    pick = idx[np.arange(len(w)), rng.integers(1, n_neighbors + 1, len(w))]
+    idx = neighbors if neighbors is not None else neighbor_index(w, n_neighbors)
+    pick = idx[np.arange(len(w)), rng.integers(0, idx.shape[1], len(w))]
     return Windows(w.yh, w.xh[pick], w.target, w.block_id)
 
 
@@ -45,9 +51,12 @@ def null_distribution(models, train_blocks, val_blocks, train_w, val_w, k, l, u,
     if kind not in ("local", "phase"):
         raise ValueError("surrogate must be 'local' or 'phase'")
     out = np.empty(n_surrogates)
+    if kind == "local":
+        nb_tr, nb_va = neighbor_index(train_w), neighbor_index(val_w)
     for b in range(n_surrogates):
         if kind == "local":
-            s_tr, s_va = local_permutation(train_w, rng), local_permutation(val_w, rng)
+            s_tr = local_permutation(train_w, rng, neighbors=nb_tr)
+            s_va = local_permutation(val_w, rng, neighbors=nb_va)
             m = models.refit_frozen(s_tr, refit_y=False)  # Y-only inputs are unchanged
         else:
             s_tr = windows_from_blocks([phase_randomize(bl, rng) for bl in train_blocks], k, l, u)

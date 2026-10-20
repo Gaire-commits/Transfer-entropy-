@@ -31,7 +31,18 @@ def make_windows(block, k, l, u=1):
 
 
 def windows_from_blocks(blocks, k, l, u=1):
-    parts = [make_windows(b, k, l, u) for b in blocks]
+    """Windows touching a gap (NaN) are dropped, so a missing bar never shifts the
+    others; blocks too short for one window contribute nothing."""
+    parts = []
+    for b in blocks:
+        if len(b) < window_span(k, l, u):
+            parts.append((np.empty((0, k)), np.empty((0, l)), np.empty(0)))
+            continue
+        yh, xh, tgt = make_windows(b, k, l, u)
+        ok = np.isfinite(yh).all(axis=1) & np.isfinite(xh).all(axis=1) & np.isfinite(tgt)
+        parts.append((yh[ok], xh[ok], tgt[ok]))
+    if not sum(len(p[2]) for p in parts):
+        raise ValueError("no complete windows: every window touches a gap or a block edge")
     return Windows(
         yh=np.concatenate([p[0] for p in parts]),
         xh=np.concatenate([p[1] for p in parts]),

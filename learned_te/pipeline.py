@@ -5,7 +5,7 @@ import numpy as np
 
 from .models import gain, make_predictors
 from .preprocess import CausalPreprocessor
-from .split import choose_gap, group_split, time_split, window_span
+from .split import choose_gap, day_split, group_split, time_split, window_span
 from .surrogates import null_distribution
 from .windows import windows_from_blocks
 
@@ -23,7 +23,8 @@ class Config:
     inv_sigmas: tuple = (0.0, 0.5, 1.0)  # added Y-noise std per environment
     inv_penalty: str = "monotone"  # "monotone" or "vrex"
     inv_hidden: int = 0  # 0 = linear, >0 = two-layer tanh MLP
-    gap: int | None = None  # None -> max(window span, autocorrelation time)
+    gap: int | None = None  # samples (one series) or sessions (day split); None -> automatic
+    session_split: str = "days"  # sessions: "days" = whole sessions per set; "within" = split each
     frac: tuple = (0.6, 0.2, 0.2)
     band: tuple | None = None  # causal filter band in Hz, e.g. (1, 40)
     fs: float = 1.0
@@ -39,7 +40,7 @@ class Config:
 class Result:
     te: float  # raw test-set T_hat (nats)
     te_eff: float  # T_hat minus mean null T_hat
-    ci: tuple  # block-bootstrap CI for te_eff
+    ci: tuple  # block-bootstrap CI for te_eff (whole days with the day split)
     threshold: float  # frozen on val
     p_value: float
     significant: bool
@@ -58,6 +59,16 @@ def _block_bootstrap(e_y, e_xy, block_len, n_boot, rng):
     for b in range(n_boot):
         starts = rng.integers(0, starts_max + 1, n_blocks)
         idx = (starts[:, None] + np.arange(block_len)).ravel()[:n]
+        out[b] = gain(e_y[idx].mean(), e_xy[idx].mean())
+    return out
+
+
+def _day_bootstrap(e_y, e_xy, block_id, n_boot, rng):
+    """Resample whole test days: windows on the same day share that day's market."""
+    rows = [np.flatnonzero(block_id == d) for d in np.unique(block_id)]
+    out = np.empty(n_boot)
+    for b in range(n_boot):
+        idx = np.concatenate([rows[i] for i in rng.integers(0, len(rows), len(rows))])
         out[b] = gain(e_y[idx].mean(), e_xy[idx].mean())
     return out
 
@@ -89,7 +100,11 @@ def run(series=None, cfg=Config(), sessions=None, test_ids=()):
     span = window_span(max_k, max_l, cfg.u)
 
     # Steps 1-2: split (group first if sessions are given), with gaps.
-    if sessions is not None:
+    by_day = sessions is not None and cfg.session_split == "days"
+    if by_day:
+        gap = cfg.gap or 1  # embargo, in sessions
+        split = day_split(sessions, test_ids, gap, cfg.frac)
+    elif sessions is not None:
         any_train = next(s for sid, s in sessions.items() if sid not in test_ids)
         gap = cfg.gap or choose_gap(any_train, span, 0.75)
         split = group_split(sessions, set(test_ids), gap)
@@ -122,7 +137,10 @@ def run(series=None, cfg=Config(), sessions=None, test_ids=()):
     # Step 9: one-shot test evaluation.
     e_y, e_xy = models.sq_errors(te)
     t_hat = gain(e_y.mean(), e_xy.mean())
-    boot = _block_bootstrap(e_y, e_xy, gap, cfg.n_bootstrap, rng) - bias
+    if by_day:
+        boot = _day_bootstrap(e_y, e_xy, te.block_id, cfg.n_bootstrap, rng) - bias
+    else:
+        boot = _block_bootstrap(e_y, e_xy, gap, cfg.n_bootstrap, rng) - bias
     p = (1 + np.sum(null >= t_hat)) / (len(null) + 1)
 
     # Step 10 sanity check: permuting targets must kill any gain.
