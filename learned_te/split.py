@@ -1,4 +1,5 @@
 """Steps 1-2: group split, then contiguous time split with gaps."""
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -38,8 +39,11 @@ def choose_gap(series, span, train_frac):
     return max(span, autocorr_time(train_region))
 
 
+MIN_BLOCK = 50  # smallest train/val/test block, in samples
+
+
 def _check(block, name):
-    if len(block) < 50:
+    if len(block) < MIN_BLOCK:
         raise ValueError(f"{name} block has only {len(block)} samples; series too short for this gap")
     return block
 
@@ -58,15 +62,30 @@ def time_split(series, gap, frac=(0.6, 0.2, 0.2)):
 
 
 def group_split(sessions, test_ids, gap, train_frac=0.75):
-    """Hold out whole sessions for test; time-split the rest into train/val with a gap."""
-    train, val, test = [], [], []
+    """Hold out whole sessions for test; time-split the rest into train/val with a gap.
+
+    Sessions too short for this gap (e.g. half trading days) are skipped with a
+    warning instead of failing the whole run.
+    """
+    train, val, test, skipped = [], [], [], []
     for sid, s in sessions.items():
         if sid in test_ids:
-            test.append(_check(s, f"test session {sid}"))
+            if len(s) >= MIN_BLOCK:
+                test.append(s)
+            else:
+                skipped.append(sid)
             continue
         i1 = int(train_frac * len(s))
-        train.append(_check(s[:i1], f"train session {sid}"))
-        val.append(_check(s[i1 + gap :], f"val session {sid}"))
+        if i1 < MIN_BLOCK or len(s) - i1 - gap < MIN_BLOCK:
+            skipped.append(sid)
+            continue
+        train.append(s[:i1])
+        val.append(s[i1 + gap :])
+    if skipped:
+        shown = ", ".join(map(str, skipped[:5])) + (" ..." if len(skipped) > 5 else "")
+        warnings.warn(f"skipped {len(skipped)} session(s) too short for gap={gap}: {shown}")
+    if not train:
+        raise ValueError(f"no train/val session is long enough for gap={gap}")
     if not test:
-        raise ValueError("no test sessions selected")
+        raise ValueError("no usable test sessions")
     return Split(train, val, test, gap)

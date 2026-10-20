@@ -50,6 +50,21 @@ def test_stock_data_without_keys_fails_clearly(monkeypatch):
         fetch_bars(["AAPL"], "2025-01-01", "2025-02-01")
 
 
+def test_default_min_bars_drops_half_days():
+    full = _minute_prices(("2025-07-02",))
+    half = _minute_prices(("2025-07-03",), bars=210)  # 9:30-13:00 early close
+    assert list(intraday_sessions(pd.concat([full, half]), "AAA", "BBB")) == ["2025-07-02"]
+
+
+def test_half_day_session_is_skipped_not_fatal():
+    # Regression: a 209-sample half day left a 49-sample val block and crashed report().
+    sessions = {f"2025-07-{d:02d}": simulate("coupled", n=389, seed=d) for d in range(1, 13)}
+    sessions["2025-07-03"] = simulate("coupled", n=209, seed=99)
+    with pytest.warns(UserWarning, match="2025-07-03"):
+        rep = report(sessions, Config(n_surrogates=20, n_bootstrap=100), test_ids=["2025-07-11", "2025-07-12"])
+    assert rep["forward"].significant
+
+
 def test_report_accepts_sessions():
     sessions = {f"day{i:02d}": simulate("coupled", n=600, seed=i) for i in range(10)}
     rep = report(sessions, Config(n_surrogates=20, n_bootstrap=100), test_ids=["day08", "day09"])

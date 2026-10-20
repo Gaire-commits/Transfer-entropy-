@@ -98,9 +98,10 @@ def to_array(returns, x, y, refs=()):
     return returns[[x, y, *refs]].to_numpy(float)
 
 
-def intraday_sessions(prices, x, y, refs=(), tz="America/New_York", min_bars=200):
+def intraday_sessions(prices, x, y, refs=(), tz="America/New_York", min_bars=300):
     """{trading date: (n, c) array of within-day log returns}. Each day's first return
-    is dropped, so no return spans the overnight gap. Short days are skipped."""
+    is dropped, so no return spans the overnight gap. Days with fewer than `min_bars`
+    returns are skipped; the default 300 drops half days (about 210 one-minute bars)."""
     local = prices.tz_convert(tz) if prices.index.tz is not None else prices
     sessions = {}
     for day, chunk in local.groupby(local.index.date):
