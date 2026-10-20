@@ -1,7 +1,12 @@
 # learned_te
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Gaire-commits/Transfer-entropy-/blob/main/notebooks/learned_te_colab.ipynb)
+
 Leakage-safe learned transfer entropy estimator:
 T̂_{X→Y} = ½ ln(MSE of f_Y / MSE of f_XY), evaluated once on a held-out test block.
+
+The [Colab notebook](notebooks/learned_te_colab.ipynb) runs everything below in the browser:
+simulated benchmarks, Alpaca crypto and stock data, and your own CSV.
 
 | Step | What | Where |
 |---|---|---|
