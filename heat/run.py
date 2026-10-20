@@ -67,8 +67,9 @@ def run_experiment(panel, cfg, out_dir=None, device="auto", log=print, archs=Non
         # The bootstrap stream depends on the architecture, not on the order archs are run in.
         rng = np.random.default_rng([tc["seed"], registered.index(arch) if arch in registered else 99])
         models, preds = {}, {}
+        tca = {**tc, **tc.get("per_arch", {}).get(arch, {})}  # tuned settings, if the config has them
         for variant in VARIANTS:
-            model, info = train_variant(arch, variant, gather, train, val, holds, mc["lookback"], tc, device, log)
+            model, info = train_variant(arch, variant, gather, train, val, holds, mc["lookback"], tca, device, log)
             models[variant] = (model, info)
             preds[variant] = predict(model, gather, test, variant, info["y_scale"], device=device)
             if out:

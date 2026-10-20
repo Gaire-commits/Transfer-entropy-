@@ -38,22 +38,74 @@ peer history from the same signal bar.
 
 ## Running it
 
-Open the notebook with the badge above (GPU runtime). It runs the controls, then a **check run** that
-trains to 2019, validates on 2020 and scores 2021, inside the training years, then the registered run,
-one architecture per cell. Each architecture is saved to Drive as soon as it's scored and skipped if
-run again, so a dropped session resumes, and the test days are not scored twice by accident (`--rerun`
-does that on purpose, to be disclosed). The verdict appears once all three architectures are in.
+Open the notebook with the badge above (GPU runtime). In order:
+
+1. **Controls**: the tests, including a planted leader that must be found and a null that must not.
+2. **Check run**: trains to 2019, validates on 2020, scores 2021, inside the training years. Run it as
+   often as you like; it never touches the test days. It also draws the visual report.
+3. **Tuning** (optional, validation days only): see below.
+4. **Registered run**: one architecture per cell. Each is saved to Drive as soon as it's scored and
+   skipped if run again, so a dropped session resumes and the test days are not scored twice by accident
+   (`--rerun` does that on purpose, to be disclosed). The verdict appears once all three are in.
+5. **Result and visual report.**
 
 ```bash
 python scripts/run.py --out-dir <outputs>/heat_v1 --check
 ```
 
 ```bash
-python scripts/run.py --out-dir <outputs>/heat_v1 --archs bilstm
+python scripts/tune.py --out-dir <outputs>/heat_v1 --archs bilstm
+```
+
+```bash
+python scripts/run.py --config configs/heat_v2.yaml --out-dir <outputs>/heat_v2 --panel <outputs>/heat_v1/panel.npz --archs bilstm
 ```
 
 ```bash
 python -m pytest -q tests
+```
+
+## Tuning the deep models
+
+[`heat/tune.py`](heat/tune.py), run by [`scripts/tune.py`](scripts/tune.py): random search with successive
+halving over learning rate, weight decay, width, depth, dropout and each architecture's own knobs (kernel
+size for the ResNet, attention heads for the Transformer).
+
+- **Validation days only.** The tuner is given the training and validation moments and nothing else; the
+  test days are never loaded. That is what lets tuned settings be registered before the test is scored.
+- **The default is always a candidate**, so tuning cannot do worse than the registered default on validation.
+- **No tuning advantage for the peers.** A setting is scored by its mean validation loss over the no-peer,
+  correlated-peer and random-peer models, and all three share it.
+- **Adopted only if it beats noise.** The winner and the default are each retrained with two seeds; the
+  tuned setting is used only if its mean validation loss beats the default's by more than the larger
+  seed spread. Otherwise the default is kept.
+- **Register before scoring.** The tuner writes `tuning/heat_v2.yaml`, a copy of `heat_v1` with only the
+  experiment name and `train.per_arch` changed (a test checks that nothing else moved). It is committed
+  and hash-frozen before the registered run, which then uses it. `heat_v1` was never scored on the test
+  days, so `heat_v2` supersedes it with the test still unseen.
+
+## The visual report
+
+[`heat/viz.py`](heat/viz.py) writes `viz.html` for any run: one self-contained file, no internet needed,
+opens in a browser and in the notebook. Filters at the top: architecture (or all three averaged), hold,
+and how many links to show. Hover anything for the numbers; every chart has a table view; light and dark
+themes.
+
+| Chart | Shows |
+|---|---|
+| Transfer by hold | Gain from correlated peers vs random peers per architecture, with day-block intervals |
+| Does it pay after costs? | Net bps per position with intervals, and the verdict |
+| Who leads whom | Leader × follower matrix of how much of the follower's error the leader's last hour removes, grouped by sector |
+| The flow network | Arrows from leader to follower, stocks clustered by sector, darker = sends more heat |
+| Industries leading industries | The same heat averaged between sectors |
+| Strongest pairs | The top pairs, across all four holds side by side |
+| Who moves with whom | The correlated-peer links themselves: how many stay in a sector and how many cross it |
+
+Position carries the sector and one blue ramp carries magnitude, so nothing needs more colours than the
+chart palette can keep apart.
+
+```bash
+python scripts/viz.py --out-dir <outputs>/heat_v1/check
 ```
 
 ## Code
@@ -67,11 +119,15 @@ python -m pytest -q tests
 | [`heat/train.py`](heat/train.py) | Training with identical budgets per variant, early stopping on validation days |
 | [`heat/evaluate.py`](heat/evaluate.py) | Transfer G, quintile book, rank IC, day-block intervals, the verdict, the heat map |
 | [`heat/run.py`](heat/run.py) | The experiment end to end, saved per architecture |
+| [`heat/tune.py`](heat/tune.py) | Hyperparameter tuning on validation days, and the candidate `heat_v2` config |
+| [`heat/viz.py`](heat/viz.py), [`viz_template.html`](heat/viz_template.html) | The visual report |
 | [`heat/synthetic.py`](heat/synthetic.py) | Synthetic panels with planted leaders, for the controls |
 
-**Tests** (`tests/`, about 2 minutes): no look-ahead in peers, inputs and labels; the grid rules; the
+**Tests** (`tests/`, about 5 minutes): no look-ahead in peers, inputs and labels; the grid rules; the
 book's accounting; the verdict logic; the controls (a planted leader is an edge at 30 minutes and leads
-the heat map; with nothing planted, no edge); resuming; and the frozen config.
+the heat map; with nothing planted, no edge); resuming; tuning (validation only, default always a
+candidate, adoption needs a gain beyond seed noise, the candidate config differs only where it says);
+the visual report (self-contained, matches the run's files); and the frozen config.
 
 A positive result is predictive information, not causation. Like the reversal, it would also need to
 hold in a forward test before it is called tradeable.

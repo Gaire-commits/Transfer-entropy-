@@ -39,7 +39,8 @@ def train_variant(arch, variant, gather: Gather, train: Moments, val: Moments, h
     """Returns (model, info). `tcfg`: size, lr, weight_decay, batch, samples_per_epoch, max_epochs,
     patience, val_samples, seed."""
     torch.manual_seed(tcfg["seed"])  # same init for every variant of an architecture
-    model = make_model(arch, 1 + gather.k, len(holds), lookback, tcfg["size"]).to(device)
+    hp = {k: tcfg[k] for k in ("dropout", "depth", "kernel", "heads") if k in tcfg}
+    model = make_model(arch, 1 + gather.k, len(holds), lookback, tcfg["size"], hp).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=tcfg["lr"], weight_decay=tcfg["weight_decay"])
     y_scale = torch.from_numpy(np.nanstd(train.y, axis=0).astype(np.float32)).to(device)
 

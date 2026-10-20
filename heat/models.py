@@ -54,11 +54,24 @@ class Transformer(nn.Module):
         return self.head(z.mean(1))
 
 
-def make_model(arch, channels, holds, lookback, size):
+# What heat_v1 trains (the registered defaults). `hp` overrides any of dropout / depth / kernel / heads.
+DEFAULTS = {
+    "bilstm": {"dropout": 0.1, "depth": 2},
+    "resnet1d": {"dropout": 0.1, "depth": 3, "kernel": 3},
+    "transformer": {"dropout": 0.1, "depth": 2, "heads": 4},
+}
+
+
+def make_model(arch, channels, holds, lookback, size, hp=None):
+    if arch not in DEFAULTS:
+        raise ValueError(f"unknown arch {arch!r}; use bilstm, resnet1d or transformer")
+    h = {**DEFAULTS[arch], **(hp or {})}
     if arch == "bilstm":
-        return BiLSTM(channels, holds, hidden=size)
+        return BiLSTM(channels, holds, hidden=size, layers=int(h["depth"]), dropout=h["dropout"])
     if arch == "resnet1d":
-        return ResNet1D(channels, holds, width=size)
-    if arch == "transformer":
-        return Transformer(channels, holds, lookback, d_model=size)
-    raise ValueError(f"unknown arch {arch!r}; use bilstm, resnet1d or transformer")
+        return ResNet1D(channels, holds, width=size, blocks=int(h["depth"]), kernel=int(h["kernel"]),
+                        dropout=h["dropout"])
+    if size % int(h["heads"]):
+        raise ValueError(f"size {size} is not divisible by heads {h['heads']}")
+    return Transformer(channels, holds, lookback, d_model=size, heads=int(h["heads"]),
+                       layers=int(h["depth"]), dropout=h["dropout"])

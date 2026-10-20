@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heat Transfer Report</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10);
+  --accent: #2a78d6; --good: #006300; --bad: #d03b3b; --edge: #898781;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
+    --accent: #3987e5; --good: #0ca30c; --bad: #d03b3b;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
+  --accent: #3987e5; --good: #0ca30c; --bad: #d03b3b;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 26px; font-weight: 600; margin: 0 0 4px; letter-spacing: -.01em; }
+h2 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+p.sub { margin: 0 0 16px; color: var(--ink2); max-width: 78ch; }
+.banner { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--bad); border-radius: 8px; padding: 10px 14px; margin: 0 0 16px; color: var(--ink2); }
+.banner b { color: var(--ink); }
+.filters { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; background: var(--page); padding: 10px 0; border-bottom: 1px solid var(--grid); margin-bottom: 16px; }
+.filters label { color: var(--ink2); font-size: 13px; display: flex; gap: 8px; align-items: center; }
+select, .seg button { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--axis); border-radius: 8px; padding: 6px 10px; }
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; margin-left: -1px; cursor: pointer; }
+.seg button:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+.seg button:last-child { border-radius: 0 8px 8px 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; position: relative; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.tile, .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.tile { padding: 14px 16px; }
+.tile .v { font-size: 34px; font-weight: 600; line-height: 1.15; }
+.tile .k { color: var(--ink2); font-size: 13px; }
+.card { padding: 16px; margin-bottom: 16px; }
+.card .sub { margin-bottom: 10px; }
+svg { display: block; width: 100%; height: auto; }
+svg text { fill: var(--ink2); font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; }
+svg text.ink { fill: var(--ink); }
+svg text.muted { fill: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--ink2); font-size: 13px; margin-bottom: 6px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.ramp { display: inline-block; width: 120px; height: 8px; border-radius: 4px; vertical-align: middle; margin: 0 6px; }
+details { margin-top: 10px; } summary { cursor: pointer; color: var(--ink2); font-size: 13px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); color: var(--ink2); white-space: nowrap; }
+th { color: var(--ink); font-weight: 600; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.scroll { overflow-x: auto; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink); border: 1px solid var(--axis); border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1.4; max-width: 280px; box-shadow: 0 4px 16px rgba(0,0,0,.18); display: none; }
+#tip .m { color: var(--ink2); }
+.ok { color: var(--good); font-weight: 600; } .no { color: var(--bad); font-weight: 600; } .pend { color: var(--muted); }
+@media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } .tile .v { font-size: 28px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Heat transfer between correlated stocks</h1>
+  <p class="sub">Does a stock's next 30 minutes to 4 hours follow the recent moves of the stocks it moves with? Transfer is how much a stock's correlated peers cut the prediction error beyond its own past, measured out of sample.</p>
+  <div id="banner"></div>
+  <div class="filters" id="filters"></div>
+  <div class="tiles" id="tiles"></div>
+  <section class="card"><h2>Transfer by hold</h2>
+    <p class="sub">The gain from correlated peers (blue) against the same model reading 5 random peers (grey), in nats; above zero means the peers help. Whiskers are the day-block interval. Each panel is one architecture.</p>
+    <div class="legend"><span><i style="background:var(--accent)"></i>Correlated peers</span><span><i style="background:var(--muted)"></i>Random peers (control)</span></div>
+    <div id="chartA"></div><details><summary>Table view</summary><div class="scroll" id="tableA"></div></details></section>
+  <section class="card"><h2>Does it pay after costs?</h2>
+    <p class="sub">Net return per position of the long-short book on the correlated-peer model, after <span id="costTxt"></span>, in basis points. An edge needs the whole interval above zero and every other registered check.</p>
+    <div id="chartB"></div><details><summary>Table view</summary><div class="scroll" id="tableB"></div></details></section>
+  <section class="card"><h2>Who leads whom</h2>
+    <p class="sub">Rows are the leader (a peer), columns the follower. Darker means more of the follower's prediction error is removed by the leader's last hour. Stocks are grouped by sector.</p>
+    <div class="legend"><span>Less<span class="ramp" id="ramp1"></span>More <span id="rampMax" class="muted"></span></span></div>
+    <div id="chartC"></div><details><summary>Table view</summary><div class="scroll" id="tableC"></div></details></section>
+  <section class="card"><h2>The flow network</h2>
+    <p class="sub">Each arrow runs from leader to follower; the arrow gets thicker with more heat. Stocks sit in their sector's cluster, and a stock is darker the more heat it sends.</p>
+    <div class="legend"><span>Sends less<span class="ramp" id="ramp2"></span>Sends more</span></div>
+    <div id="chartD"></div></section>
+  <div class="grid2">
+    <section class="card"><h2>Industries leading industries</h2>
+      <p class="sub">Average heat from a leader's sector (row) to a follower's sector (column).</p>
+      <div id="chartE"></div><details><summary>Table view</summary><div class="scroll" id="tableE"></div></details></section>
+    <section class="card"><h2>Strongest pairs</h2>
+      <p class="sub">Ranked at the selected hold. "Agree" is how many architectures show a positive flow.</p>
+      <div class="scroll" id="tableF"></div></section>
+  </div>
+  <section class="card" id="peerCard" style="display:none"><h2>Who moves with whom</h2>
+    <p class="sub" id="peerSub"></p><div id="chartG"></div></section>
+</main>
+<div id="tip" role="tooltip"></div>
+<script id="data" type="application/json">/*__DATA__*/null</script>
+<script>
+const D = JSON.parse(document.getElementById('data').textContent);
+const NS = 'http://www.w3.org/2000/svg';
+const RAMP = ['#cde2fb','#b7d3f6','#9ec5f4','#86b6ef','#6da7ec','#5598e7','#3987e5','#2a78d6','#256abf','#1c5cab','#184f95','#104281','#0d366b'];
+const state = { arch: 'all', hold: 0, top: 80 };
+const $ = id => document.getElementById(id);
+const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const isDark = () => css('color-scheme') === 'dark';
+function ramp(t) { t = Math.max(0, Math.min(1, t)); const a = isDark() ? RAMP.slice(3).reverse() : RAMP; const x = t * (a.length - 1), i = Math.floor(x); return a[Math.min(i, a.length - 1)] }
+function niceTicks(lo, hi, n = 5) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), norm = raw / mag;
+  const step = (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + step * 1e-9; v += step) out.push(+v.toFixed(12));
+  return { ticks: out, decimals: Math.max(0, -Math.floor(Math.log10(step))) };
+}
+const fmt = (v, d = 4) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(d);
+const pct = v => (v * 100).toFixed(2) + '%';
+const stockOf = i => D.stocks[i];
+const tip = $('tip');
+function showTip(ev, html) { tip.innerHTML = html; tip.style.display = 'block'; const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.min(ev.clientX + 14, innerWidth - w - 8) + 'px'; tip.style.top = Math.max(8, Math.min(ev.clientY + 14, innerHeight - h - 8)) + 'px'; }
+const hideTip = () => tip.style.display = 'none';
+function hover(node, html, onEnter, onLeave) {
+  node.addEventListener('mousemove', e => showTip(e, html()));
+  node.addEventListener('mouseenter', () => onEnter && onEnter());
+  node.addEventListener('mouseleave', () => { hideTip(); onLeave && onLeave(); });
+}
+const sectorRank = {}; D.sectors.forEach((s, i) => sectorRank[s.name] = i);
+
+// ---- flows for the current filters ------------------------------------------------------------------
+function flowsFor() {
+  const hold = D.meta.holds[state.hold], archs = state.arch === 'all' ? D.meta.archs : [state.arch];
+  const m = new Map();
+  for (const a of archs) for (const [s, t, v, n] of (D.flows[a + '|' + hold] || [])) {
+    const k = s * 100000 + t; let r = m.get(k);
+    if (!r) m.set(k, r = { s, t, per: {}, n });
+    r.per[a] = v; r.n = Math.min(r.n, n);
+  }
+  const out = [];
+  for (const r of m.values()) { const vs = Object.values(r.per); r.v = vs.reduce((a, b) => a + b, 0) / vs.length;
+    r.agree = vs.filter(x => x > 0).length; r.of = archs.length; out.push(r); }
+  return out.sort((a, b) => b.v - a.v);
+}
+const per = r => Object.entries(r.per).map(([a, v]) => `<div class="m">${a}: ${pct(v)}</div>`).join('');
+const pairTip = r => `<b>${stockOf(r.s).s} → ${stockOf(r.t).s}</b><br><span class="m">${stockOf(r.s).name} (${stockOf(r.s).sector}) leads ${stockOf(r.t).name} (${stockOf(r.t).sector})</span><br>Heat: <b>${pct(r.v)}</b> of the follower's error<br><span class="m">${r.n.toLocaleString()} moments</span>${state.arch === 'all' ? per(r) : ''}`;
+
+// ---- filters & tiles -----------------------------------------------------------------------------------
+function buildFilters() {
+  const f = $('filters');
+  f.innerHTML = '<label>Architecture <select id="selArch"></select></label><label>Hold <span class="seg" id="segHold"></span></label><label>Links shown <select id="selTop"></select></label>';
+  const sa = $('selArch'); sa.innerHTML = '<option value="all">All, averaged</option>' + D.meta.archs.map(a => `<option>${a}</option>`).join('');
+  sa.onchange = () => { state.arch = sa.value; draw(); };
+  const sh = $('segHold'); D.meta.holds.forEach((h, i) => { const b = document.createElement('button'); b.textContent = h; b.onclick = () => { state.hold = i; draw(); }; b.dataset.i = i; sh.appendChild(b); });
+  const st = $('selTop'); st.innerHTML = [40, 80, 150, 300].map(n => `<option ${n === state.top ? 'selected' : ''}>${n}</option>`).join('');
+  st.onchange = () => { state.top = +st.value; draw(); };
+}
+function drawTiles() {
+  const c = D.cells, done = D.meta.complete;
+  const edges = c.filter(x => x.verdict === 'EDGE').length, heat = c.filter(x => x.heat_transfer).length;
+  const best = c.reduce((a, b) => b.G_peers[0] > a.G_peers[0] ? b : a);
+  const bestNet = c.reduce((a, b) => b.net[0] > a.net[0] ? b : a);
+  const tile = (v, k) => `<div class="tile"><div class="v">${v}</div><div class="k">${k}</div></div>`;
+  $('tiles').innerHTML = tile(done ? `${edges} of ${c.length}` : 'pending', 'cells with an edge after costs') +
+    tile(`${heat} of ${c.length}`, 'cells where correlated peers beat random and no peers') +
+    tile(fmt(best.G_peers[0], 4), `best transfer, nats (${best.arch}, ${best.hold})`) +
+    tile(fmt(bestNet.net[0], 2), `best net bps per position (${bestNet.arch}, ${bestNet.hold})`);
+  $('costTxt').textContent = D.meta.cost_bps + ' bps per position';
+  const b = $('banner');
+  b.innerHTML = D.meta.check ? '<div class="banner"><b>Check run, not the registered result.</b> This was scored on 2021, inside the training years; the registered test days were not used.</div>'
+    : (!done ? '<div class="banner"><b>Partial.</b> Not every architecture is scored yet, so there is no verdict.</div>' : '');
+}
+
+// ---- A: transfer by hold (small multiples) ----------------------------------------------------------------
+function drawA() {
+  const archs = D.meta.archs, holds = D.meta.holds, W = 1080, pw = W / archs.length, H = 270, m = { l: 62, r: 56, t: 30, b: 34 };
+  const lo = Math.min(0, ...D.cells.flatMap(c => [c.G_peers[1], c.G_random[1]])), hi = Math.max(0, ...D.cells.flatMap(c => [c.G_peers[2], c.G_random[2]]));
+  const pad = (hi - lo) * .08 || .001, y0 = lo - pad, y1 = hi + pad;
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Transfer in nats by hold for each architecture' });
+  archs.forEach((a, k) => {
+    const g = el('g', { transform: `translate(${k * pw},0)` }, svg), iw = pw - m.l - m.r, ih = H - m.t - m.b;
+    const X = i => m.l + (holds.length === 1 ? iw / 2 : i * iw / (holds.length - 1)), Y = v => m.t + (1 - (v - y0) / (y1 - y0)) * ih;
+    const nt = niceTicks(y0, y1, 4);
+    nt.ticks.forEach(v => { el('line', { x1: m.l, x2: pw - m.r, y1: Y(v), y2: Y(v), stroke: css('--grid') }, g);
+      const t = el('text', { x: m.l - 8, y: Y(v) + 4, 'text-anchor': 'end', class: 'muted' }, g); t.textContent = v.toFixed(nt.decimals); });
+    el('line', { x1: m.l, x2: pw - m.r, y1: Y(0), y2: Y(0), stroke: css('--axis'), 'stroke-width': 1.5 }, g);
+    const t0 = el('text', { x: m.l, y: m.t - 14, class: 'ink', 'font-weight': 600 }, g); t0.textContent = a;
+    holds.forEach((h, i) => { const t = el('text', { x: X(i), y: H - 10, 'text-anchor': 'middle', class: 'muted' }, g); t.textContent = h; });
+    const rows = holds.map(h => D.cells.find(c => c.arch === a && c.hold === h));
+    [['G_random', css('--muted'), 'random'], ['G_peers', css('--accent'), 'peers']].forEach(([key, col, lab]) => {
+      el('polyline', { points: rows.map((r, i) => r ? `${X(i)},${Y(r[key][0])}` : null).filter(Boolean).join(' '), fill: 'none', stroke: col, 'stroke-width': 2 }, g);
+      rows.forEach((r, i) => { if (!r) return; const [v, l, u] = r[key];
+        el('line', { x1: X(i), x2: X(i), y1: Y(l), y2: Y(u), stroke: col, 'stroke-width': 1.25, opacity: .7 }, g);
+        const dot = el('circle', { cx: X(i), cy: Y(v), r: 5, fill: col, stroke: css('--surface'), 'stroke-width': 2 }, g);
+        const hit = el('circle', { cx: X(i), cy: Y(v), r: 14, fill: 'transparent' }, g);
+        hover(hit, () => `<b>${a}, ${r.hold}</b><br>${lab === 'peers' ? 'Correlated peers' : 'Random peers'}: <b>${fmt(v, 5)}</b> nats<br><span class="m">interval ${fmt(l, 5)} to ${fmt(u, 5)}</span>`); });
+      const last = rows.map((r, i) => [r, i]).filter(([r]) => r).pop();
+      if (last) { const t = el('text', { x: X(last[1]) + 10, y: Y(last[0][key][0]) + (key === 'G_peers' ? -6 : 14), class: 'ink' }, g); t.textContent = lab; }
+    });
+  });
+  $('chartA').replaceChildren(svg);
+  $('tableA').innerHTML = table(['Architecture', 'Hold', 'Peers', 'Random', 'Peers − random', 'Heat transfer'],
+    D.cells.map(c => [c.arch, c.hold, `${fmt(c.G_peers[0], 5)} [${fmt(c.G_peers[1], 5)}, ${fmt(c.G_peers[2], 5)}]`, `${fmt(c.G_random[0], 5)}`, `${fmt(c.G_diff[0], 5)} [${fmt(c.G_diff[1], 5)}, ${fmt(c.G_diff[2], 5)}]`, c.heat_transfer ? 'yes' : 'no']));
+}
+function table(head, rows) { return `<table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map((c, i) => `<td${i > 1 && /^[+−0-9]/.test(c) ? ' class="num"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`; }
+
+// ---- B: net bps forest ---------------------------------------------------------------------------------------------
+function verdictHtml(v) { return v === 'EDGE' ? '<span class="ok">✓ edge</span>' : v === 'pending' ? '<span class="pend">pending</span>' : '<span class="no">✕ no edge</span>'; }
+function drawB() {
+  const rows = D.cells, W = 1080, rh = 24, m = { l: 150, r: 210, t: 12, b: 34 }, H = m.t + m.b + rows.length * rh + (D.meta.archs.length - 1) * 10;
+  const lo = Math.min(0, ...rows.map(r => r.net[1])), hi = Math.max(0, ...rows.map(r => r.net[2])), pad = (hi - lo) * .06 || 1;
+  const x0 = lo - pad, x1 = hi + pad, X = v => m.l + (v - x0) / (x1 - x0) * (W - m.l - m.r);
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Net basis points per position by architecture and hold' });
+  const nb = niceTicks(x0, x1, 6); nb.ticks.forEach(v => { el('line', { x1: X(v), x2: X(v), y1: m.t, y2: H - m.b, stroke: css('--grid') }, svg);
+    const t = el('text', { x: X(v), y: H - 12, 'text-anchor': 'middle', class: 'muted' }, svg); t.textContent = v.toFixed(nb.decimals); });
+  el('line', { x1: X(0), x2: X(0), y1: m.t, y2: H - m.b, stroke: css('--axis'), 'stroke-width': 1.5 }, svg);
+  let y = m.t, prev = null;
+  rows.forEach(r => { if (prev && prev !== r.arch) y += 10; prev = r.arch; const cy = y + rh / 2;
+    const lab = el('text', { x: m.l - 12, y: cy + 4, 'text-anchor': 'end', class: 'ink' }, svg); lab.textContent = `${r.arch} · ${r.hold}`;
+    el('line', { x1: X(r.net[1]), x2: X(r.net[2]), y1: cy, y2: cy, stroke: css('--accent'), 'stroke-width': 2, opacity: .75 }, svg);
+    el('circle', { cx: X(r.net[0]), cy, r: 5.5, fill: css('--accent'), stroke: css('--surface'), 'stroke-width': 2 }, svg);
+    const v = el('text', { x: W - m.r + 12, y: cy + 4, class: 'ink' }, svg); v.textContent = r.verdict === 'EDGE' ? '✓ edge' : r.verdict === 'pending' ? 'pending' : '✕ no edge';
+    v.style.fill = r.verdict === 'EDGE' ? css('--good') : r.verdict === 'pending' ? css('--muted') : css('--bad');
+    const hit = el('rect', { x: m.l - 150, y, width: W - m.l + 150, height: rh, fill: 'transparent' }, svg);
+    hover(hit, () => `<b>${r.arch}, ${r.hold}</b><br>Net: <b>${fmt(r.net[0], 2)} bps</b> <span class="m">[${fmt(r.net[1], 2)}, ${fmt(r.net[2], 2)}]</span><br><span class="m">Gross ${fmt(r.gross, 2)} · no-peer net ${fmt(r.net_own, 2)} · IC ${fmt(r.ic, 4)}</span><br>${verdictHtml(r.verdict)}${r.verdict.startsWith('NO EDGE') ? `<br><span class="m">${r.verdict.replace('NO EDGE ', '')}</span>` : ''}`);
+    y += rh; });
+  const t = el('text', { x: X(0) + 6, y: m.t + 10, class: 'muted' }, svg); t.textContent = 'break-even';
+  $('chartB').replaceChildren(svg);
+  $('tableB').innerHTML = table(['Architecture', 'Hold', 'Net bps', 'Gross bps', 'No-peer net', 'Rank IC', 'Verdict'],
+    rows.map(r => [r.arch, r.hold, `${fmt(r.net[0], 2)} [${fmt(r.net[1], 2)}, ${fmt(r.net[2], 2)}]`, fmt(r.gross, 2), fmt(r.net_own, 2), fmt(r.ic, 4), r.verdict]));
+}
+
+// ---- C: matrix (leaders x followers) -------------------------------------------------------------------------------
+function topStocks(fl, n) {
+  const w = new Map(); for (const r of fl) { w.set(r.s, (w.get(r.s) || 0) + r.v); w.set(r.t, (w.get(r.t) || 0) + r.v); }
+  const ids = [...w.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(e => e[0]);
+  return ids.sort((a, b) => sectorRank[stockOf(a).sector] - sectorRank[stockOf(b).sector] || (w.get(b) - w.get(a)));
+}
+function drawC(fl) {
+  const want = Math.min(40, Math.max(12, Math.round(state.top / 2))), ids = topStocks(fl.slice(0, Math.max(state.top * 4, 300)), want);
+  const N = ids.length, idx = new Map(ids.map((s, i) => [s, i])), cell = 22, m = { l: 56, t: 56 }, W = m.l + N * cell + 8, H = m.t + N * cell + 8;
+  const vals = fl.filter(r => idx.has(r.s) && idx.has(r.t)), sorted = vals.map(r => r.v).sort((a, b) => a - b), top = sorted[Math.floor(sorted.length * .98)] || sorted[sorted.length - 1] || 1;
+  $('rampMax').textContent = `(darkest = ${pct(top)})`;
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Matrix of heat from each leading stock to each following stock' });
+  ids.forEach((s, i) => { const lx = el('text', { x: m.l - 6, y: m.t + i * cell + cell / 2 + 4, 'text-anchor': 'end', class: 'ink' }, svg); lx.textContent = stockOf(s).s; lx.style.fontSize = '10px';
+    const ty = el('text', { transform: `translate(${m.l + i * cell + cell / 2 + 3},${m.t - 6}) rotate(-90)`, class: 'ink' }, svg); ty.textContent = stockOf(s).s; ty.style.fontSize = '10px'; });
+  for (const r of vals) { const i = idx.get(r.s), j = idx.get(r.t); if (i === j) continue;
+    const rect = el('rect', { x: m.l + j * cell + 1, y: m.t + i * cell + 1, width: cell - 2, height: cell - 2, rx: 3, fill: ramp(r.v / top) }, svg);
+    hover(rect, () => pairTip(r), () => rect.setAttribute('stroke', css('--ink')), () => rect.removeAttribute('stroke')); }
+  let prev = null; ids.forEach((s, i) => { const sec = stockOf(s).sector; if (sec !== prev && i > 0) { const p = m.l + i * cell - 0.5;
+      el('line', { x1: p, x2: p, y1: m.t, y2: m.t + N * cell, stroke: css('--axis') }, svg); el('line', { x1: m.l, x2: m.l + N * cell, y1: m.t + i * cell - .5, y2: m.t + i * cell - .5, stroke: css('--axis') }, svg); } prev = sec; });
+  $('chartC').replaceChildren(svg); $('ramp1').style.background = rampGradient();
+  $('tableC').innerHTML = table(['Leader', 'Follower', 'Heat', 'Moments'], vals.sort((a, b) => b.v - a.v).slice(0, 60).map(r => [`${stockOf(r.s).s} (${stockOf(r.s).sector})`, `${stockOf(r.t).s} (${stockOf(r.t).sector})`, pct(r.v), r.n.toLocaleString()]));
+}
+const rampGradient = () => `linear-gradient(90deg, ${[0, .25, .5, .75, 1].map(ramp).join(',')})`;
+
+// ---- D: the network ------------------------------------------------------------------------------------------------------
+function drawD(fl) {
+  const links = fl.slice(0, state.top), W = 1000, H = 860, svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Network of heat flows between stocks grouped by sector' });
+  const defs = el('defs', {}, svg), mk = el('marker', { id: 'ah', viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 8, markerHeight: 8, markerUnits: 'userSpaceOnUse', orient: 'auto' }, defs); el('path', { d: 'M0,0 L8,4 L0,8 z', fill: css('--edge') }, mk);
+  D.sectors.forEach(s => { const t = el('text', { x: s.x, y: s.y - s.r - 14, 'text-anchor': 'middle', class: 'muted' }, svg); t.textContent = s.name; t.style.fontSize = '12px'; });
+  const out = new Map(), maxv = links[0] ? links[0].v : 1;
+  links.forEach(r => out.set(r.s, (out.get(r.s) || 0) + r.v));
+  const gl = el('g', {}, svg), edges = [];
+  links.forEach(r => { const a = stockOf(r.s), b = stockOf(r.t), dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, off = Math.min(60, d * .18);
+    const mx = (a.x + b.x) / 2 - dy / d * off, my = (a.y + b.y) / 2 + dx / d * off, sh = 7;
+    const path = el('path', { d: `M${a.x},${a.y} Q${mx},${my} ${b.x - dx / d * sh},${b.y - dy / d * sh}`, fill: 'none', stroke: css('--edge'), 'stroke-width': .7 + 3.3 * Math.sqrt(r.v / maxv), opacity: .5, 'marker-end': 'url(#ah)' }, gl);
+    const hit = el('path', { d: path.getAttribute('d'), fill: 'none', stroke: 'transparent', 'stroke-width': 12 }, gl); edges.push(path);
+    hover(hit, () => pairTip(r), () => { path.setAttribute('stroke', css('--accent')); path.setAttribute('opacity', 1); }, () => { path.setAttribute('stroke', css('--edge')); path.setAttribute('opacity', .5); }); });
+  const maxo = Math.max(...out.values(), 1e-9), labeled = [...out.entries()].sort((a, b) => b[1] - a[1]).slice(0, 14).map(e => e[0]), seen = new Set();
+  links.forEach(r => [r.s, r.t].forEach(i => { if (seen.has(i)) return; seen.add(i); const s = stockOf(i), o = out.get(i) || 0;
+    const c = el('circle', { cx: s.x, cy: s.y, r: 7, fill: o ? ramp(.25 + .75 * o / maxo) : css('--axis'), stroke: css('--surface'), 'stroke-width': 2 }, svg);
+    hover(c, () => `<b>${s.s}</b> <span class="m">${s.name}</span><br><span class="m">${s.sector}</span><br>Heat sent: <b>${pct(o)}</b> (sum over shown links)`); }));
+  labeled.forEach(i => { const s = stockOf(i), t = el('text', { x: s.x, y: s.y - 11, 'text-anchor': 'middle', class: 'ink' }, svg); t.textContent = s.s; t.style.fontSize = '11px'; t.style.paintOrder = 'stroke'; t.style.stroke = css('--surface'); t.style.strokeWidth = '3px'; });
+  $('chartD').replaceChildren(svg); $('ramp2').style.background = rampGradient();
+}
+
+// ---- E: sector x sector --------------------------------------------------------------------------------------------------------
+function drawE(fl) {
+  const secs = D.sectors.map(s => s.name), idx = Object.fromEntries(secs.map((s, i) => [s, i])), n = secs.length;
+  const sum = secs.map(() => secs.map(() => 0)), w = secs.map(() => secs.map(() => 0));
+  for (const r of fl) { const i = idx[stockOf(r.s).sector], j = idx[stockOf(r.t).sector]; sum[i][j] += r.v * r.n; w[i][j] += r.n; }
+  const avg = sum.map((row, i) => row.map((v, j) => w[i][j] ? v / w[i][j] : 0)), mx = Math.max(...avg.flat(), 1e-9);
+  const cell = 34, m = { l: 128, t: 112 }, W = m.l + n * cell + 6, H = m.t + n * cell + 6, svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Average heat between sectors' });
+  secs.forEach((s, i) => { const l = el('text', { x: m.l - 8, y: m.t + i * cell + cell / 2 + 4, 'text-anchor': 'end', class: 'ink' }, svg); l.textContent = s; l.style.fontSize = '11px';
+    const t = el('text', { transform: `translate(${m.l + i * cell + cell / 2 + 4},${m.t - 8}) rotate(-60)`, class: 'ink' }, svg); t.textContent = s; t.style.fontSize = '11px'; });
+  secs.forEach((_, i) => secs.forEach((__, j) => { const v = avg[i][j]; const r = el('rect', { x: m.l + j * cell + 1, y: m.t + i * cell + 1, width: cell - 2, height: cell - 2, rx: 3, fill: w[i][j] ? ramp(v / mx) : 'transparent', stroke: w[i][j] ? 'none' : css('--grid') }, svg);
+    hover(r, () => `<b>${secs[i]} → ${secs[j]}</b><br>${w[i][j] ? `Average heat <b>${pct(v)}</b>` : 'No links'}<br><span class="m">${w[i][j].toLocaleString()} moments${i === j ? ' · same sector' : ''}</span>`); }));
+  $('chartE').replaceChildren(svg);
+  $('tableE').innerHTML = table(['Leader sector', 'Follower sector', 'Average heat', 'Moments'], secs.flatMap((a, i) => secs.map((b, j) => [a, b, w[i][j] ? pct(avg[i][j]) : '–', w[i][j].toLocaleString()])).filter(r => r[2] !== '–').sort((x, y) => parseFloat(y[2]) - parseFloat(x[2])).slice(0, 40));
+}
+
+// ---- F: strongest pairs (with the holds side by side) --------------------------------------------------------------------------
+function drawF(fl) {
+  const archs = state.arch === 'all' ? D.meta.archs : [state.arch], at = h => { const m = new Map();
+    for (const a of archs) for (const [s, t, v] of (D.flows[a + '|' + h] || [])) { const k = s * 100000 + t, r = m.get(k) || [0, 0]; r[0] += v; r[1]++; m.set(k, r); } return m; };
+  const byHold = D.meta.holds.map(at), top = fl.slice(0, 15);
+  $('tableF').innerHTML = `<table><thead><tr><th>Leader → follower</th>${D.meta.holds.map(h => `<th>${h}</th>`).join('')}<th>Agree</th></tr></thead><tbody>` + top.map(r => {
+    const cells = byHold.map(m => { const x = m.get(r.s * 100000 + r.t); return x ? x[0] / x[1] : null; }), mx = Math.max(...cells.filter(v => v !== null), 1e-9);
+    return `<tr><td><b class="ink" style="color:var(--ink)">${stockOf(r.s).s} → ${stockOf(r.t).s}</b> <span class="muted">${stockOf(r.s).sector === stockOf(r.t).sector ? 'same sector' : stockOf(r.s).sector + ' → ' + stockOf(r.t).sector}</span></td>` +
+      cells.map((v, i) => `<td class="num" style="${i === state.hold ? 'font-weight:600;color:var(--ink)' : ''}">${v === null ? '–' : pct(v)}</td>`).join('') + `<td class="num">${r.agree} of ${r.of}</td></tr>`; }).join('') + '</tbody></table>';
+}
+
+// ---- G: who moves with whom (peers) -------------------------------------------------------------------------------------------
+function drawG() {
+  const P = D.peers; if (!P) return; $('peerCard').style.display = 'block';
+  $('peerSub').textContent = `Each stock's 5 most correlated stocks over the last 60 trading days (the peers the models read). ${(P.same_sector * 100).toFixed(0)}% of these links are inside the stock's own sector; random pairing would give ${(P.random_same_sector * 100).toFixed(0)}%. Links that cross sectors are the ones a sector label would miss.`;
+  const W = 1000, H = 860, svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Correlated-peer links between stocks grouped by sector' });
+  D.sectors.forEach(s => { const t = el('text', { x: s.x, y: s.y - s.r - 14, 'text-anchor': 'middle', class: 'muted' }, svg); t.textContent = s.name; });
+  const g = el('g', {}, svg), deg = new Map();
+  P.edges.forEach(([a, b, rho]) => { deg.set(a, (deg.get(a) || 0) + 1); deg.set(b, (deg.get(b) || 0) + 1); const A = stockOf(a), B = stockOf(b), cross = A.sector !== B.sector;
+    const l = el('line', { x1: A.x, y1: A.y, x2: B.x, y2: B.y, stroke: css('--edge'), 'stroke-width': cross ? 1.1 : .6, opacity: cross ? .5 : .22 }, g);
+    const hit = el('line', { x1: A.x, y1: A.y, x2: B.x, y2: B.y, stroke: 'transparent', 'stroke-width': 8 }, g);
+    hover(hit, () => `<b>${A.s} ↔ ${B.s}</b><br><span class="m">${A.sector}${cross ? ' · ' + B.sector : ''}</span><br>Correlation <b>${rho.toFixed(2)}</b>${cross ? '<br><span class="m">crosses sectors</span>' : ''}`, () => { l.setAttribute('stroke', css('--accent')); l.setAttribute('opacity', 1); }, () => { l.setAttribute('stroke', css('--edge')); l.setAttribute('opacity', cross ? .5 : .22); }); });
+  const mx = Math.max(...deg.values(), 1);
+  deg.forEach((d, i) => { const s = stockOf(i), c = el('circle', { cx: s.x, cy: s.y, r: 4.5, fill: ramp(.2 + .8 * d / mx), stroke: css('--surface'), 'stroke-width': 1.5 }, svg);
+    hover(c, () => `<b>${s.s}</b> <span class="m">${s.name}</span><br><span class="m">${s.sector}</span><br>Chosen as a peer by <b>${d}</b> links`); });
+  $('chartG').replaceChildren(svg);
+}
+
+// ---- go ---------------------------------------------------------------------------------------------------------------------------
+function draw() {
+  document.querySelectorAll('#segHold button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.i === state.hold));
+  const fl = flowsFor();
+  drawTiles(); drawA(); drawB();
+  if (fl.length) { drawC(fl); drawD(fl); drawE(fl); drawF(fl); }
+  else ['chartC', 'chartD', 'chartE'].forEach(id => $(id).innerHTML = '<p class="sub">No heat-flow data in this run.</p>');
+  drawG();
+}
+buildFilters(); draw();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+</script>
+</body>
+</html>

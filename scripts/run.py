@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from heat import config  # noqa: E402
 from heat.data import THESIS_SIP_DIR, Panel, build_panel, load_universe  # noqa: E402
 from heat.run import run_experiment  # noqa: E402
+from heat.viz import write_report  # noqa: E402
 
 
 def main():
@@ -32,13 +33,15 @@ def main():
                     help="a quick run inside the training years (train to 2019, val 2020, score 2021); "
                          "never touches the registered test days, writes to <out-dir>/check")
     ap.add_argument("--universe", help="symbols CSV (default: the config's universe)")
+    ap.add_argument("--panel", help="a panel.npz built earlier (e.g. by another experiment's run); "
+                                    "default <out-dir>/panel.npz, built if missing")
     ap.add_argument("--rerun", action="store_true",
                     help="score already-scored architectures again (disclose it in the write-up)")
     args = ap.parse_args()
 
     cfg = config.load(args.config)
     out = Path(args.out_dir)
-    panel_path = out / "panel.npz"
+    panel_path = Path(args.panel) if args.panel else out / "panel.npz"
     if args.check:
         cfg["split"].update(train_end="2019-12-31", val_end="2020-12-31", test_end="2021-12-31")
         cfg["train"].update(samples_per_epoch=300_000, max_epochs=3, val_samples=100_000)
@@ -57,6 +60,13 @@ def main():
     # Architectures already scored in <out> are skipped, so a dropped session just resumes.
     run_experiment(panel, cfg, out, args.device, archs=args.archs, rerun=args.rerun)
     print((out / "report.md").read_text())
+    try:  # the pictures must never break a run
+        ev = cfg["evaluation"]
+        meta = {"experiment": cfg["experiment"], "cost_bps": ev["cost_bps"], "level": ev["level"],
+                "check": bool(cfg.get("check"))}
+        print("visual report:", write_report(out, args.universe or cfg["data"]["universe"], meta, panel_path))
+    except Exception as exc:  # noqa: BLE001
+        print(f"(visual report skipped: {exc})")
 
 
 if __name__ == "__main__":
