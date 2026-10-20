@@ -1,110 +1,77 @@
-# learned_te
+# Heat transfer between correlated stocks
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Gaire-commits/Transfer-entropy-/blob/main/notebooks/learned_te_colab.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Gaire-commits/Transfer-entropy-/blob/main/notebooks/heat_colab.ipynb)
 
-Leakage-safe learned transfer entropy estimator:
-T̂_{X→Y} = ½ ln(MSE of f_Y / MSE of f_XY), evaluated once on a held-out test block.
+The transfer-entropy stage of Kshitiz Gaire's thesis, following
+[entropy-gate-pipeline](https://github.com/Gaire-commits/entropy-gate-pipeline). That project found a real
+short-term reversal (a stock that lagged the market over 30 minutes recovers a little, building over the
+first hour and lasting to 4 hours: E5, E9, E10), and found that a stock's 5 most correlated peers, as a
+linear rank signal, predict no better than random peers (E12). This asks the question again with deep
+models and transfer entropy: does a stock's next 30 minutes to 4 hours follow the recent moves of the
+stocks it moves with, beyond its own reversal, and is that an edge after costs?
 
-The transfer-entropy stage of the thesis that follows
-[entropy-gate-pipeline](https://github.com/Gaire-commits/entropy-gate-pipeline): does one stock's
-recent 5-minute move predict another's next move, beyond the target's own past and the market?
-The [Colab notebook](notebooks/learned_te_colab.ipynb) runs the synthetic controls, then the
-proposal's pairs (NVDA–AMD, V–MA, MSFT–GOOGL) on the thesis's cached SIP bars.
+## The experiment (HEAT1, registered in [`configs/heat_v1.yaml`](configs/heat_v1.yaml), 2026-10-20)
 
-| Step | What | Where |
-|---|---|---|
-| 0 | Freeze design (k, l, u, grids, model, seed) | `pipeline.Config` |
-| 1–2 | Group split, then time split with gap G ≥ max(window span, ACF time) | `split.py` |
-| 3–4 | Causal filter, common-mode regression, scaling — fit on train only | `preprocess.py` |
-| 5 | Windows built inside each block, never across | `windows.py` |
-| 6 | f_Y and f_XY, same family and budget, early stopping on val | `models.py` |
-| 7 | k, l tuned on val | `pipeline._select_history` |
-| 8 | Estimator null: refit on surrogate train with frozen hyperparameters, score on surrogate val | `surrogates.py` |
-| 9 | One-shot test: T̂, T_eff, block-bootstrap CI, p-value | `pipeline.run` |
-| 10 | Diagnostics: reverse direction, time reversal, noise sweep, gap sweep, shuffled targets | `diagnostics.py` |
+| | |
+|---|---|
+| Data | Thesis 5-minute SIP bars, S&P 500 (503 stocks), 2016–2026, returns relative to the equal-weighted market |
+| Moments | A stock at a signal bar, every 30 minutes (E5/E12 geometry): about 12 million |
+| Input | The last hour (12 bars) of the stock and its 5 most correlated peers (previous 60 days, chosen monthly, E12's rule) |
+| Holds | Enter one bar after the signal; hold 30 min, 1 h, 2 h, 4 h, all within the day |
+| Models | BiLSTM, CNN-ResNet (1-D), Transformer; one output per hold |
+| Controls | The same model, initial weights, batches and budget with **no peers** and with **5 random peers** |
+| Transfer | G = ½ ln(MSE no peers / MSE with peers), nats, on test moments |
+| Split | Whole days: train 2016–2021, validation 2022–2023, **test 2024 onward, scored once** |
+| Trading | Quintile long-short on predictions at each moment, 2 bps per position |
+| Intervals | 99% day-block bootstrap (2,000 draws) |
 
-```bash
-python3 demo.py
-```
+**Edge** in a cell (architecture × hold, 12 cells) requires all five:
+1. net of 2 bps above zero;
+2. above the no-peer model's net (the edge is the peers, not the reversal);
+3. G with correlated peers above G with random peers (E12's control);
+4. positive in both halves of the test days;
+5. Benjamini-Hochberg at q = 0.05 over the 12 cells.
 
-```bash
-python3 -m pytest -q tests
-```
+**Heat map** ([`evaluate.heat_flows`](heat/evaluate.py)): for each source → target pair, the share of the
+target's error that the source's last hour removes. The source's history is swapped with another stock's
+peer history from the same signal bar.
 
-Input: an `(n, c)` array with columns `[X, Y, ref...]`, or `run(sessions={...}, test_ids=[...])`
-for multi-session data. Use `Config(ref_cols=(2,))` to regress out a reference channel and
-`Config(model="mlp")` for the nonlinear estimator.
+## Running it
 
-## Market data: the thesis's 5-minute SIP bars
-
-[`market.py`](learned_te/market.py) reads the bars entropy-gate-pipeline already cached on Google
-Drive (`My Drive/entropy-gate-pipeline-data/data/bars_sip/5Min/<SYM>.parquet`, 503 S&P 500 stocks,
-2016-01-04 to 2026-10-12) and applies the thesis data rules:
-
-- **Fixed session grid.** Regular hours on a 5-minute grid per trading day. Missing bars stay as
-  gaps (NaN) and every window touching one is dropped, so a gap never shifts later bars. Early
-  closes end at 13:00, and a final day still in progress is dropped.
-- **Within-day returns.** No return spans the overnight gap.
-- **Market-neutral.** The market is the equal-weighted mean return across the universe at each bar,
-  as in the thesis (`leadlag.py`, `peers.py`). It is computed once, saved, and regressed out as a
-  reference column. The SIP cache holds stocks only, so SPY is not used.
-- **Inference by day.** With sessions, whole days go to train, validation or test in time order
-  (`day_split`, one embargo day between sets; the last 20% of days is the hold-out), and
-  confidence intervals resample whole test days.
-- **Feeds never mix.** Loading refuses a cache whose metadata says it is not SIP.
-- **Many pairs.** [`multiple.py`](learned_te/multiple.py) applies Benjamini-Hochberg
-  false-discovery control across directions.
-
-```python
-from learned_te import Config, report
-from learned_te.market import THESIS_SIP_DIR, day_sessions, load_cached_closes, market_returns
-
-market = market_returns(THESIS_SIP_DIR, cache_file=".../outputs/transfer_entropy/market_5min.parquet")
-closes = load_cached_closes(THESIS_SIP_DIR, ["NVDA", "AMD"])
-sessions = day_sessions(closes, x="NVDA", y="AMD", market=market)  # columns [NVDA, AMD, market]
-rep = report(sessions, Config(k=6, l=6, ref_cols=(2,), n_surrogates=200))
-print(rep["verdict"])
-```
-
-`k = 6` bars is 30 minutes of the target's own history, so its own short-term reversal (the
-thesis's E5 result) is already in the baseline and cannot pass for transfer.
-
-For symbols outside the cache, `fetch_bars` downloads the same 5-minute SIP bars from Alpaca
-(`pip install alpaca-py`; keys from env vars or Colab secrets, never from code).
-
-Keep in mind: effects in returns are tiny, markets are non-stationary, and a positive result is
-predictive information, not causation or a trading signal. `report()` checks scale with the
-estimate's own confidence interval, so they stay meaningful at these sizes.
-
-## Noise-invariance training (`model="invariant"`)
-
-[`invariance.py`](learned_te/invariance.py) trains f_Y and f_XY jointly (torch) with
-
-L = MSE_Y + MSE_XY + λ · penalty(g_1 … g_E),  g_e = ½ ln(MSE_Y^e / MSE_XY^e)
-
-where environment e adds white noise of std σ_e to the Y channel. Leakage makes g_e grow
-with σ_e, while real transfer does not. `inv_penalty="monotone"` (default) penalizes only that
-growth. `"vrex"` penalizes any variation, which also suppresses real transfer. MSE_Y is
-detached in the penalty, so the penalty cannot be met by making f_Y worse. The estimator null
-refits with the penalty and frozen epoch count.
+Open the notebook with the badge above (GPU runtime). It runs the controls, then a **check run** that
+trains to 2019, validates on 2020 and scores 2021, inside the training years, then the registered run,
+one architecture per cell. Each architecture is saved to Drive as soon as it's scored and skipped if
+run again, so a dropped session resumes, and the test days are not scored twice by accident (`--rerun`
+does that on purpose, to be disclosed). The verdict appears once all three architectures are in.
 
 ```bash
-python3 compare_invariance.py
+python scripts/run.py --out-dir <outputs>/heat_v1 --check
 ```
 
-Results (T_eff in nats, mean over 3 seeds; significant runs out of 3):
+```bash
+python scripts/run.py --out-dir <outputs>/heat_v1 --archs bilstm
+```
 
-| Scenario (truth) | λ = 0 | monotone λ = 10 | monotone λ = 100 | V-REx λ = 100 |
-|---|---|---|---|---|
-| coupled (X→Y) | +0.186 (3/3) | +0.187 (3/3) | +0.192 (3/3) | +0.182 (3/3) |
-| independent (none) | −0.001 (0/3) | −0.001 (0/3) | −0.001 (0/3) | −0.001 (0/3) |
-| proxy_leak (none) | +0.024 (3/3) | +0.017 (3/3) | +0.010 (3/3) | +0.022 (3/3) |
-| shared_noise (none) | +0.005 (3/3) | +0.006 (3/3) | +0.006 (3/3) | +0.006 (3/3) |
+```bash
+python -m pytest -q tests
+```
 
-The monotone penalty cuts the proxy leak by more than half without affecting real transfer,
-but it does not remove it, and it does nothing for shared noise (whose spurious gain doesn't
-grow with added Y noise). The leak cases are still significant, so use the diagnostics in
-`report()`, not significance alone.
+## Code
 
-Note: `surrogate="phase"` preserves all linear cross-structure, so with `model="ridge"` it
-only tests for nonlinear transfer.
+| File | What |
+|---|---|
+| [`heat/data.py`](heat/data.py) | Thesis cache → one panel of market-relative 5-minute returns on the fixed session grid (gaps kept, no overnight returns, early closes, feeds never mix) |
+| [`heat/peers.py`](heat/peers.py) | Point-in-time correlated peers and random peers, monthly (E12's rule) |
+| [`heat/dataset.py`](heat/dataset.py) | Moments, hold labels inside the day, whole-day splits, input batches built on the GPU |
+| [`heat/models.py`](heat/models.py) | BiLSTM, ResNet1D, Transformer |
+| [`heat/train.py`](heat/train.py) | Training with identical budgets per variant, early stopping on validation days |
+| [`heat/evaluate.py`](heat/evaluate.py) | Transfer G, quintile book, rank IC, day-block intervals, the verdict, the heat map |
+| [`heat/run.py`](heat/run.py) | The experiment end to end, saved per architecture |
+| [`heat/synthetic.py`](heat/synthetic.py) | Synthetic panels with planted leaders, for the controls |
+
+**Tests** (`tests/`, about 2 minutes): no look-ahead in peers, inputs and labels; the grid rules; the
+book's accounting; the verdict logic; the controls (a planted leader is an edge at 30 minutes and leads
+the heat map; with nothing planted, no edge); resuming; and the frozen config.
+
+A positive result is predictive information, not causation. Like the reversal, it would also need to
+hold in a forward test before it is called tradeable.

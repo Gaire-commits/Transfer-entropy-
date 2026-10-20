@@ -1,0 +1,70 @@
+# HEAT1: does a stock's next 30 minutes to 4 hours follow the recent moves of the stocks it moves with,
+# and is that an edge after costs? Transfer entropy with deep models, S&P 500, 5-minute SIP bars.
+#
+# Follows entropy-gate-pipeline. E5 found a real short-term reversal (a stock that lagged the market over
+# 30 minutes recovers a little, building over the first hour and lasting to 4 hours, E9/E10). E12 found
+# that each stock's 5 most correlated peers, as a linear rank signal, predict no better than random peers.
+# This retests the correlated-peers idea as transfer entropy: deep models that read the last hour of the
+# stock and of its peers, compared with the same model reading the stock alone (so the stock's own
+# reversal is in the baseline) and with the same model reading 5 random peers (E12's control).
+#
+# Transfer, per hold: G = 1/2 ln(MSE no peers / MSE with peers) on test moments, in nats. The "heat" is
+# where it goes: for each peer, how much of a stock's error that peer's past removes (evaluate.heat_flows).
+#
+# PROTOCOL, fixed before any result (2026-10-20). For each architecture and hold (12 cells), on the test
+# days only (2024-01-02 onward, never used before this run), with 99% day-block intervals:
+#   1. net_positive: the correlated-peer model's quintile long-short book earns more than 2 bps per
+#      position, net, interval above zero.
+#   2. beats_no_peers: its net minus the no-peer model's net, interval above zero (the edge is the
+#      peers, not the stock's own reversal).
+#   3. beats_random_peers: G(correlated) minus G(random), interval above zero (the peers that matter
+#      are the correlated ones; E12's control).
+#   4. both_halves_positive: the net is above zero in both halves of the test days (point estimates).
+#   5. fdr: Benjamini-Hochberg at q = 0.05 over the 12 cells, on the day-block p-value of check 1.
+# A cell with all five is an EDGE; any other cell is NO EDGE, with the failed checks named.
+# Reported, not decisive: G(correlated) and G(random) against no peers ("heat transfer" when both
+# G(correlated) > 0 and check 3 hold); gross returns; rank IC; the heat map.
+experiment: heat_v1
+
+data:
+  universe: universe/sp500.csv
+  timeframe: 5Min
+  feed: sip
+
+split:  # whole trading days, in time order
+  train_end: "2021-12-31"
+  val_end: "2023-12-31"
+  embargo_days: 1
+
+peers:  # E12's rule
+  k: 5
+  peer_days: 60
+  min_share: 0.8
+  seed: 0
+
+moments:  # E5/E12 geometry
+  lookback: 12  # bars (1 hour) of the stock and its peers
+  stride: 6  # a moment every 30 minutes
+  lag: 1  # enter one bar after the signal bar
+  holds: [6, 12, 24, 48]  # 30 min, 1 h, 2 h, 4 h
+
+train:
+  archs: [bilstm, resnet1d, transformer]
+  size: 64
+  lr: 0.001
+  weight_decay: 0.0001
+  batch: 4096
+  samples_per_epoch: 2000000
+  max_epochs: 30
+  patience: 4
+  val_samples: 500000
+  seed: 0
+
+evaluation:
+  level: 0.99
+  bootstrap: 2000
+  cost_bps: 2.0
+  q: 0.2  # quintile book
+  min_stocks: 20  # a moment needs this many stocks
+  fdr_q: 0.05
+  heat_samples: 300000
