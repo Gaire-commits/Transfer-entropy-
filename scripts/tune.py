@@ -66,6 +66,8 @@ def main():
     ap.add_argument("--check", action="store_true",
                     help="quick run: train to 2019, validate on 2020, small budgets; writes no candidate config")
     ap.add_argument("--universe")
+    ap.add_argument("--panel", help="where the panel lives (default <out-dir>/panel.npz); keep it off Drive: "
+                                    "it is ~420 MB and cheap to rebuild")
     ap.add_argument("--rerun", action="store_true")
     args = ap.parse_args()
 
@@ -81,7 +83,7 @@ def main():
         tdir = out / "tuning"
     tdir.mkdir(parents=True, exist_ok=True)
 
-    panel_path = out / "panel.npz"
+    panel_path = Path(args.panel) if args.panel else out / "panel.npz"
     if panel_path.exists():
         panel = Panel.load(panel_path)
     else:

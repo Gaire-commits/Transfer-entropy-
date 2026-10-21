@@ -65,6 +65,11 @@ python scripts/run.py --config configs/heat_v2.yaml --out-dir <outputs>/heat_v2 
 python -m pytest -q tests
 ```
 
+**Drive and the panel.** The panel (`panel.npz`, ~420 MB) is rebuilt from the bars in a few minutes, so the
+notebook keeps it on the machine's own disk (`--panel /content/heat_panel.npz`) and sends only the small
+result files to Drive. One huge upload can hold up everything queued behind it. After each script the
+notebook flushes Drive with a time limit, so a slow upload can't freeze it.
+
 ## Tuning the deep models
 
 [`heat/tune.py`](heat/tune.py), run by [`scripts/tune.py`](scripts/tune.py): random search with successive
