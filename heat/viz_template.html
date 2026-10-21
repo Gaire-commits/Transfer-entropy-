@@ -329,7 +329,11 @@ function draw() {
   const fl = flowsFor();
   drawTiles(); drawA(); drawB();
   if (fl.length) { drawC(fl); drawD(fl); drawE(fl); drawF(fl); }
-  else ['chartC', 'chartD', 'chartE'].forEach(id => $(id).innerHTML = '<p class="sub">No heat-flow data in this run.</p>');
+  else {
+    const msg = D.meta.screened ? 'No pair clears the noise bar (its share of the follower\'s error 3 standard errors above zero) for this architecture and hold. That is a result: no detectable heat transfer here.'
+                                : 'No heat-flow data in this run.';
+    ['chartC', 'chartD', 'chartE', 'tableF'].forEach(id => $(id).innerHTML = `<p class="sub">${msg}</p>`);
+  }
   drawG();
 }
 buildFilters(); draw();

@@ -34,7 +34,10 @@ stocks it moves with, beyond its own reversal, and is that an edge after costs?
 
 **Heat map** ([`evaluate.heat_flows`](heat/evaluate.py)): for each source → target pair, the share of the
 target's error that the source's last hour removes. The source's history is swapped with another stock's
-peer history from the same signal bar.
+peer history from the same signal bar. Each pair also gets a standard error, and a pair is shown only if its share is
+3 standard errors above zero (`evaluate.screen_pairs`). Thousands of pairs are looked at, so without this
+the top of the list is pairs with few moments and a lucky share. This is a screening bar for the heat
+map, not a test; the registered verdict doesn't use it.
 
 ## Running it
 

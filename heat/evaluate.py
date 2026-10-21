@@ -138,7 +138,7 @@ def verdicts(table: pd.DataFrame, q=0.05) -> pd.DataFrame:
 
 # ---- where the heat goes ----------------------------------------------------------
 def heat_flows(model, gather, test: Moments, y_scale, hold_index, symbols, max_samples=200_000,
-               batch=8192, device="cpu", rng=None, min_count=50):
+               batch=8192, device="cpu", rng=None, min_count=50, z=3.0):
     """Which peer's past carries information about which stock: for each peer slot, swap that
     peer's history for the slot-mate of another stock at the same signal bar and measure how much
     the stock's squared error rises. Aggregated by (source = the peer, target = the stock) as the
@@ -184,11 +184,26 @@ def heat_flows(model, gather, test: Moments, y_scale, hold_index, symbols, max_s
         src = stocks[:, k + 1].cpu().numpy()
         frames.append(pd.DataFrame({"source": src, "target": m.s, "delta": delta, "base": base}))
     df = pd.concat(frames)
-    df = df[df["source"] != gather.none]
-    agg = df.groupby(["source", "target"]).agg(n=("delta", "size"), delta=("delta", "sum"), base=("base", "sum"))
-    agg = agg[agg["n"] >= min_count]
-    agg["heat_share"] = agg["delta"] / agg["base"]
-    agg = agg.reset_index()
+    agg = screen_pairs(df[df["source"] != gather.none], min_count, z)
     agg["source"] = [symbols[i] for i in agg["source"]]
     agg["target"] = [symbols[i] for i in agg["target"]]
-    return agg.sort_values("heat_share", ascending=False)[["source", "target", "n", "heat_share"]]
+    return agg
+
+
+def screen_pairs(df: pd.DataFrame, min_count=50, z=3.0) -> pd.DataFrame:
+    """Per (source, target): n, heat_share = sum(delta) / sum(base), its standard error, and the lower
+    bound lcb = share - z * se, strongest bound first. A screening bar, not inference: thousands of
+    pairs are looked at, so a pair counts only when its share is z standard errors above zero, and a
+    small pair with a lucky share no longer tops the list."""
+    df = df.assign(dd=df["delta"] ** 2, db=df["delta"] * df["base"], bb=df["base"] ** 2)
+    agg = df.groupby(["source", "target"]).agg(n=("delta", "size"), delta=("delta", "sum"), base=("base", "sum"),
+                                                dd=("dd", "sum"), db=("db", "sum"), bb=("bb", "sum"))
+    agg = agg[agg["n"] >= min_count]
+    share = agg["delta"] / agg["base"]
+    # Standard error of a ratio of sums (linearised): residuals r = delta - share * base.
+    rss = (agg["dd"] - 2 * share * agg["db"] + share ** 2 * agg["bb"]).clip(lower=0)
+    agg["heat_share"] = share
+    agg["se"] = np.sqrt(rss * agg["n"] / (agg["n"] - 1).clip(lower=1)) / agg["base"]
+    agg["lcb"] = agg["heat_share"] - z * agg["se"]
+    agg = agg.reset_index()
+    return agg.sort_values("lcb", ascending=False)[["source", "target", "n", "heat_share", "se", "lcb"]]

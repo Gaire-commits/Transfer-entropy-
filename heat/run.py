@@ -153,9 +153,20 @@ def report_md(table, heat, cfg, counts, complete=True, have=()):
                   "Cells with heat transfer (correlated peers beat random peers and no peers): "
                   f"{int(table['heat_transfer'].sum())} of {len(table)}."]
     if len(heat):
-        top = heat.sort_values("heat_share", ascending=False).head(20)
-        lines += ["", "## Where the heat goes (top 20 source → target, share of target error explained)", "",
-                  "| arch | hold | source | target | moments | heat share |", "|---|---|---|---|---|---|"]
-        lines += [f"| {r.arch} | {r.hold} | {r.source} | {r.target} | {r.n} | {r.heat_share:+.4f} |"
-                  for r in top.itertuples()]
+        if "lcb" in heat:
+            clear = heat[heat["lcb"] > 0]
+            top = clear.sort_values("lcb", ascending=False).head(20)
+            lines += ["", "## Where the heat goes", "",
+                      f"Pairs whose share of the follower's error clears zero by 3 standard errors: **{len(clear):,} of "
+                      f"{len(heat):,}** (a screening bar across many pairs, not a test)."]
+            if len(top):
+                lines += ["", "| arch | hold | source | target | moments | heat share | lower bound |", "|---|---|---|---|---|---|---|"]
+                lines += [f"| {r.arch} | {r.hold} | {r.source} | {r.target} | {r.n} | {r.heat_share:+.4f} | {r.lcb:+.4f} |"
+                          for r in top.itertuples()]
+        else:  # outputs from before the screening bar existed
+            top = heat.sort_values("heat_share", ascending=False).head(20)
+            lines += ["", "## Where the heat goes (unscreened: small pairs can top this list by luck)", "",
+                      "| arch | hold | source | target | moments | heat share |", "|---|---|---|---|---|---|"]
+            lines += [f"| {r.arch} | {r.hold} | {r.source} | {r.target} | {r.n} | {r.heat_share:+.4f} |"
+                      for r in top.itertuples()]
     return "\n".join(lines) + "\n"

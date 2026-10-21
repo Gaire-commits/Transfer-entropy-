@@ -102,8 +102,12 @@ def build_payload(cells, heat, complete, universe, cfg_meta, peers=None, top_sto
 
     flows, used = {}, set()
     for (arch, hold), g in (heat.groupby(["arch", "hold"]) if len(heat) else []):
-        g = g.sort_values("heat_share", ascending=False).head(MAX_FLOWS)
-        flows[f"{arch}|{hold_label(hold)}"] = g[["source", "target", "heat_share", "n"]].values.tolist()
+        if "lcb" in g:  # screened: only pairs whose share clears zero by z standard errors
+            g = g[g["lcb"] > 0].sort_values("heat_share", ascending=False).head(MAX_FLOWS)
+        else:  # older outputs, unscreened
+            g = g.sort_values("heat_share", ascending=False).head(MAX_FLOWS)
+        if len(g):
+            flows[f"{arch}|{hold_label(hold)}"] = g[["source", "target", "heat_share", "n"]].values.tolist()
         used.update(g["source"].tolist() + g["target"].tolist())
     peer_syms = set(sum(([e[0], e[1]] for e in peers["edges"]), [])) if peers else set()
     stocks = sorted(used | peer_syms)
@@ -122,6 +126,7 @@ def build_payload(cells, heat, complete, universe, cfg_meta, peers=None, top_sto
 
     payload = {
         "meta": {**cfg_meta, "complete": complete, "archs": archs, "holds": hold_labels,
+                 "screened": bool(len(heat)) and "lcb" in heat,
                  "days": int(cells["days"].iloc[0]) if "days" in cells else None},
         "cells": [cell_row(r) for _, r in cells.iterrows()],
         "stocks": [{"s": s, "name": name.get(s, s), "sector": sector.get(s, "Unknown"), "x": pos[s][0], "y": pos[s][1]}

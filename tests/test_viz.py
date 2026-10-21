@@ -56,8 +56,8 @@ def test_payload_matches_the_run(outputs):
     src = cells[(cells["arch"] == "resnet1d") & (cells["hold_bars"] == 6)].iloc[0]
     assert row["G_peers"][0] == pytest.approx(src["G_peers"]) and row["net"][0] == pytest.approx(src["net_bps_peers"])
     assert row["verdict"] == src["verdict"]
-    # Flow keys use the report's hold labels, so every hold can be looked up.
-    assert {k.split("|")[1] for k in p["flows"]} == set(p["meta"]["holds"])
+    # Flow keys use the report's hold labels (a hold with no pair clearing the bar has no key).
+    assert {k.split("|")[1] for k in p["flows"]} <= set(p["meta"]["holds"]) and p["meta"]["screened"]
 
 
 def test_hold_label_mapping():
@@ -69,6 +69,7 @@ def test_flows_are_real_pairs_within_range(outputs):
     n = len(p["stocks"])
     for rows in p["flows"].values():
         assert rows and all(0 <= s < n and 0 <= t < n and s != t and n_ >= 50 for s, t, v, n_ in rows)
+        assert all(v > 0 for _, _, v, _ in rows)  # only pairs that cleared the bar
         assert [r[2] for r in rows] == sorted((r[2] for r in rows), reverse=True)  # strongest first
 
 
@@ -76,8 +77,12 @@ def test_flows_are_exactly_the_runs_heat_map(outputs):
     # Fidelity, not model quality (a planted leader being found is test_controls' job).
     p = _payload(write_report(outputs, outputs / "universe.csv").read_text())
     heat = pd.read_csv(outputs / "heat_flows.csv")
-    sub = heat[(heat["arch"] == "bilstm") & (heat["hold"] == "60 min")].sort_values("heat_share", ascending=False)
-    shown = [(p["stocks"][s]["s"], p["stocks"][t]["s"], v, n) for s, t, v, n in p["flows"]["bilstm|1 h"]]
+    key = next(iter(p["flows"]))  # any (arch, hold) with pairs that clear the bar
+    arch, hold = key.split("|")
+    minutes = {"30 min": "30 min", "1 h": "60 min", "2 h": "120 min", "4 h": "240 min"}[hold]
+    sub = heat[(heat["arch"] == arch) & (heat["hold"] == minutes) & (heat["lcb"] > 0)]
+    sub = sub.sort_values("heat_share", ascending=False)
+    shown = [(p["stocks"][s]["s"], p["stocks"][t]["s"], v, n) for s, t, v, n in p["flows"][key]]
     top = list(zip(sub["source"], sub["target"], sub["heat_share"].round(5), sub["n"]))[: len(shown)]
     assert [(a, b, n) for a, b, _, n in shown] == [(a, b, n) for a, b, _, n in top]
     assert np.allclose([v for *_, v, _ in shown], [v for *_, v, _ in top], atol=1e-5)

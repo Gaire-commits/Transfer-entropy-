@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 import torch
 
-from heat.evaluate import benjamini_hochberg, book_positions, verdicts
+from heat.evaluate import benjamini_hochberg, book_positions, screen_pairs, verdicts
 from heat.models import make_model
 
 
@@ -52,3 +52,17 @@ def test_verdict_needs_every_check():
                                _cell(net_bps_peers_second_half=-0.5)]))
     assert t["verdict"].tolist()[0] == "EDGE"
     assert "beats_no_peers" in t["verdict"][1] and "both_halves_positive" in t["verdict"][2]
+
+
+def test_heat_screen_prefers_solid_pairs_over_lucky_small_ones():
+    rng = np.random.default_rng(0)
+    rows = []
+    for src, n, mean, noise in ((1, 2000, 0.05, 0.05), (2, 60, 0.30, 3.0), (3, 30, 0.9, 0.01)):
+        rows.append(pd.DataFrame({"source": src, "target": 0, "base": 1.0,
+                                  "delta": mean + rng.normal(0, noise, n)}))
+    out = screen_pairs(pd.concat(rows), min_count=50, z=3.0).set_index("source")
+    assert 3 not in out.index  # too few moments
+    assert out.loc[2, "heat_share"] > out.loc[1, "heat_share"]  # the lucky pair has the bigger share...
+    assert out.loc[1, "lcb"] > 0 > out.loc[2, "lcb"]  # ...but only the solid one clears the bar
+    assert out.index[0] == 1  # and it ranks first
+    assert np.isclose(out.loc[1, "se"], 0.05 / np.sqrt(2000), rtol=0.1)  # the error bar is the right size
