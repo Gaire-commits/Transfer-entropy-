@@ -164,7 +164,7 @@ def heat_flows(model, gather, test: Moments, y_scale, hold_index, symbols, max_s
                 sl = slice(i, i + batch)
                 times = t[sl, None] - gather.offsets[None, :]
                 x = gather.R[times[:, :, None], stk[sl, None, :]]
-                out.append(model(x)[:, hold_index].cpu().numpy() * scale)
+                out.append(model(x)[:, hold_index].to("cpu").numpy() * scale)
         return (np.concatenate(out) - y) ** 2
 
     base = errors(stocks)
@@ -181,7 +181,7 @@ def heat_flows(model, gather, test: Moments, y_scale, hold_index, symbols, max_s
         swapped = stocks.clone()
         swapped[:, k + 1] = stocks[perm_t, k + 1]
         delta = errors(swapped) - base
-        src = stocks[:, k + 1].cpu().numpy()
+        src = stocks[:, k + 1].to("cpu").numpy()
         frames.append(pd.DataFrame({"source": src, "target": m.s, "delta": delta, "base": base}))
     df = pd.concat(frames)
     agg = screen_pairs(df[df["source"] != gather.none], min_count, z)

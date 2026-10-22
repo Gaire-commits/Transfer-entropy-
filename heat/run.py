@@ -9,14 +9,17 @@ import pandas as pd
 import torch
 
 from .dataset import VARIANTS, Gather, build_moments, split_by_date
+from .device import resolve, to_cpu_state
 from .evaluate import evaluate_arch, heat_flows, verdicts
 from .peers import monthly_peers
 from .train import predict, train_variant
 
 
 def pick_device(name="auto"):
+    """'auto' = a CUDA GPU if there is one, else the CPU. TPUs are chosen explicitly ('tpu' or 'xla'),
+    normally by the notebook after its device self-test, because only that test shows they work."""
     if name != "auto":
-        return name
+        return resolve(name)
     if torch.cuda.is_available():
         return "cuda"
     return "cpu"  # MPS lacks some ops used here; CPU is the safe local default
@@ -73,7 +76,7 @@ def run_experiment(panel, cfg, out_dir=None, device="auto", log=print, archs=Non
             models[variant] = (model, info)
             preds[variant] = predict(model, gather, test, variant, info["y_scale"], device=device)
             if out:
-                torch.save(model.state_dict(), out / f"{arch}_{variant}.pt")
+                torch.save(to_cpu_state(model), out / f"{arch}_{variant}.pt")
         rows[arch] = [{"arch": arch, **r} for r in evaluate_arch(preds, test, holds, panel.days, ec, rng)]
         flows = []
         if ec.get("heat_samples"):

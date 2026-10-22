@@ -3,13 +3,13 @@ weights, the same batches in the same order, and the same budget; only the peer 
 Early stopping uses the validation days only; the test days are never seen here."""
 from __future__ import annotations
 
-import copy
 import time
 
 import numpy as np
 import torch
 
 from .dataset import Gather, Moments, to_device
+from .device import sync, to_cpu_state
 from .models import make_model
 
 
@@ -29,8 +29,9 @@ def _loss_on(model, gather, data, variant, y_scale, batch):
             pred = model(gather(t[sl], s[sl], mo[sl], variant))
             yy = y[sl] / y_scale
             ok = torch.isfinite(yy)
-            total += float(((pred - torch.nan_to_num(yy)) ** 2)[ok].sum())
-            n += int(ok.sum())
+            sq = torch.where(ok, (pred - torch.nan_to_num(yy)) ** 2, torch.zeros_like(pred))
+            total += float(sq.sum().to("cpu"))
+            n += int(ok.sum().to("cpu"))
     return total / max(n, 1)
 
 
@@ -62,10 +63,11 @@ def train_variant(arch, variant, gather: Gather, train: Moments, val: Moments, h
             opt.zero_grad()
             loss.backward()
             opt.step()
+            sync(device)  # torch_xla runs the step here; no-op on GPU / CPU
         v = _loss_on(model, gather, vdata, variant, y_scale, tcfg["batch"])
         log(f"  {arch}/{variant} epoch {epoch}: val {v:.5f} ({time.time() - start:.0f}s)")
         if v < best[0] - 1e-6:
-            best, stale = (v, copy.deepcopy(model.state_dict()), epoch), 0
+            best, stale = (v, to_cpu_state(model), epoch), 0
         else:
             stale += 1
             if stale >= tcfg["patience"]:
@@ -86,5 +88,5 @@ def predict(model, gather: Gather, m: Moments, variant, y_scale, batch=8192, dev
             x = gather(t[sl], s[sl], mo[sl], variant)
             if x_hook is not None:
                 x = x_hook(x, sl)
-            out.append((model(x) * scale).cpu().numpy())
+            out.append((model(x) * scale).to("cpu").numpy())
     return np.concatenate(out) if out else np.zeros((0, len(scale)), np.float32)
