@@ -3,6 +3,7 @@ from heat import config
 
 FROZEN = {
     "configs/heat_v1.yaml": "b228c97ab677045c2f9e7aa659cc8da16aa881ca308261cb897b2a562729dc8d",  # 2026-10-20
+    "configs/heat_v2.yaml": "2097b9dbdc01d1912c15b0c1f1eeacaf483cc139c84a6f5a0c3bb1b2a913baa1",  # 2026-10-23
 }
 
 

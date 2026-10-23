@@ -50,18 +50,18 @@ def sample_setting(arch: str, rng: np.random.Generator) -> dict:
     return s
 
 
-def _score(arch, setting, epochs, gather, train, val, holds, lookback, base, seed, device, log):
+def _score(arch, setting, epochs, gather, train, val, holds, lookback, base, seed, device, log, variants=VARIANTS):
     """Mean over the three variants of the best validation loss, with `epochs` epochs and no early stop."""
     t = {**base, **setting, "max_epochs": epochs, "patience": epochs, "seed": seed}
     losses = {}
-    for variant in VARIANTS:
+    for variant in variants:
         _, info = train_variant(arch, variant, gather, train, val, holds, lookback, t, device, lambda m: None)
         losses[variant] = info["val_loss"]
     return float(np.mean(list(losses.values()))), losses
 
 
 def tune_arch(arch, gather: Gather, train: Moments, val: Moments, holds, lookback, base, n_trials=12,
-              eta=3, budgets=(1, 3, 9), seed=0, device="cpu", log=print):
+              eta=3, budgets=(1, 3, 9), seed=0, device="cpu", log=print, variants=VARIANTS):
     """Returns (result, trials). `result` has the chosen setting, whether it beat the default beyond
     seed noise, and the confirmation numbers; `trials` is every (trial, rung) score."""
     rng = np.random.default_rng([seed, 17])
@@ -72,10 +72,10 @@ def tune_arch(arch, gather: Gather, train: Moments, val: Moments, holds, lookbac
         scored = []
         for i in alive:
             score, losses = _score(arch, settings[i], epochs, gather, train, val, holds, lookback, base,
-                                   base["seed"], device, log)
+                                   base["seed"], device, log, variants)
             scored.append((score, i))
             rows.append({"arch": arch, "trial": i, "rung": rung, "epochs": epochs, "val_loss": score,
-                         **{f"val_{v}": losses[v] for v in VARIANTS}, **settings[i]})
+                         **{f"val_{v}": losses[v] for v in variants}, **settings[i]})
             log(f"  {arch} trial {i:2d} rung {rung} ({epochs} ep): val {score:.5f}")
         scored.sort()
         if rung < len(budgets) - 1:
@@ -87,7 +87,8 @@ def tune_arch(arch, gather: Gather, train: Moments, val: Moments, holds, lookbac
     seeds = (base["seed"], base["seed"] + 1)
     conf = {}
     for name, i in (("default", 0), ("tuned", best_i)):
-        conf[name] = [_score(arch, settings[i], last, gather, train, val, holds, lookback, base, s, device, log)[0]
+        conf[name] = [_score(arch, settings[i], last, gather, train, val, holds, lookback, base, s, device, log,
+                             variants)[0]
                       for s in seeds]
     d_mean, t_mean = float(np.mean(conf["default"])), float(np.mean(conf["tuned"]))
     spread = max(abs(conf["default"][0] - conf["default"][1]), abs(conf["tuned"][0] - conf["tuned"][1]))

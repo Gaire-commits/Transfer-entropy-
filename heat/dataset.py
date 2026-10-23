@@ -18,7 +18,13 @@ import torch
 from .data import Panel
 from .peers import PeerTable
 
-VARIANTS = ("own", "peers", "random")  # no peers / correlated peers / random peers (the control)
+VARIANTS = ("own", "peers", "random")  # no peers / the experiment's peers / random peers (the control)
+
+
+def variants_for(peers_cfg: dict) -> tuple:
+    """heat_v1: own / peers (by correlation) / random. heat_v2 (select: te): own / peers (by transfer
+    entropy) / random / corr (heat_v1's correlation peers, as a further control)."""
+    return VARIANTS + (("corr",) if peers_cfg.get("select", "corr") == "te" else ())
 
 
 @dataclass
@@ -81,27 +87,66 @@ def split_by_date(m: Moments, panel: Panel, train_end, val_end, embargo_days=1, 
 
 
 class Gather:
-    """Builds input batches on the device straight from the panel: (B, lookback, 1 + k)."""
+    """Builds input batches on the device straight from the panel: (B, lookback, channels).
 
-    def __init__(self, panel: Panel, peers: PeerTable, lookback: int, scale: float, device="cpu"):
+    Channels: the stock's and its k peers' returns (1 + k). With TE features (heat_v2), also:
+    - each peer's signed TE strength into the stock at each hold (k x holds), constant over the lookback;
+    - the TE-weighted peer signal per hold: sum over peers of strength x that peer's return, at every bar
+      (holds channels). A positive relation pushes it with the peer, a negative one against, wherever
+      the peer sits among the k slots, so the model doesn't have to discover that interaction itself.
+    The no-peer model gets zeros there, so every variant has the same input shape."""
+
+    def __init__(self, panel: Panel, peers: PeerTable, lookback: int, scale: float, device="cpu", feat_scale=None):
         R = np.nan_to_num(panel.returns / scale, nan=0.0).astype(np.float32)
         S = R.shape[1]
         self.R = torch.from_numpy(np.hstack([R, np.zeros((len(R), 1), np.float32)])).to(device)  # col S = zeros
         fix = lambda p: torch.from_numpy(np.where(p >= 0, p, S)).long().to(device)
-        self.tables = {"peers": fix(peers.correlated), "random": fix(peers.random)}
+        names = ("peers", "random", "corr")
+        self.tables = {n: fix(peers.table(n)) for n in names}
         self.k = peers.correlated.shape[2]
         self.none = S
         self.offsets = torch.arange(lookback - 1, -1, -1, device=device)
         self.device = device
+        self.lookback = lookback
+        self.feats = {}
+        if peers.features:
+            fs = feat_scale or 1.0
+            self.feats = {n: torch.from_numpy(peers.features[n] / fs).float().to(device) for n in names}
+        self.n_holds = len(peers.feature_holds) if self.feats else 0
+        self.n_feat = self.k * self.n_holds
+        self.raw = {}  # unscaled strengths, for the weighted signal
+        if peers.features:
+            self.raw = {n: torch.from_numpy(peers.features[n]).float().to(device) for n in names}
+        self.channels = 1 + self.k + self.n_feat + self.n_holds
+
+    def features(self, s, month, variant):
+        """(B, lookback, n_feat) signed TE strengths of the variant's peers, or None without features."""
+        if not self.n_feat:
+            return None
+        if variant == "own":
+            return torch.zeros(len(s), self.lookback, self.n_feat, device=self.device)
+        f = self.feats[variant][month, s].reshape(len(s), 1, self.n_feat)
+        return f.expand(len(s), self.lookback, self.n_feat)
 
     def stocks(self, s, month, variant):
         if variant == "own":
             return torch.cat([s[:, None], torch.full((len(s), self.k), self.none, device=self.device)], 1)
         return torch.cat([s[:, None], self.tables[variant][month, s]], 1)
 
+    def weighted_signal(self, x, s, month, variant):
+        """(B, lookback, holds): sum_k strength_k(hold) x peer_k's return, bar by bar."""
+        if variant == "own":
+            return torch.zeros(len(s), self.lookback, self.n_holds, device=self.device)
+        w = self.raw[variant][month, s]  # (B, k, holds)
+        return torch.einsum("blk,bkh->blh", x[:, :, 1:1 + self.k], w)
+
     def __call__(self, t, s, month, variant):
         times = t[:, None] - self.offsets[None, :]  # (B, L), oldest first
-        return self.R[times[:, :, None], self.stocks(s, month, variant)[:, None, :]]
+        x = self.R[times[:, :, None], self.stocks(s, month, variant)[:, None, :]]
+        f = self.features(s, month, variant)
+        if f is None:
+            return x
+        return torch.cat([x, f, self.weighted_signal(x, s, month, variant)], dim=2)
 
 
 def to_device(m: Moments, device):

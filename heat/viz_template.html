@@ -9,21 +9,21 @@
   color-scheme: light;
   --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
   --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10);
-  --accent: #2a78d6; --good: #006300; --bad: #d03b3b; --edge: #898781;
+  --accent: #2a78d6; --good: #006300; --bad: #d03b3b; --edge: #898781; --corr: #eb6834;
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
     --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink2: #c3c2b7; --muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
-    --accent: #3987e5; --good: #0ca30c; --bad: #d03b3b;
+    --accent: #3987e5; --good: #0ca30c; --bad: #d03b3b; --corr: #d95926;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
   --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink2: #c3c2b7; --muted: #898781;
   --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
-  --accent: #3987e5; --good: #0ca30c; --bad: #d03b3b;
+  --accent: #3987e5; --good: #0ca30c; --bad: #d03b3b; --corr: #d95926;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -76,11 +76,11 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   <div class="filters" id="filters"></div>
   <div class="tiles" id="tiles"></div>
   <section class="card"><h2>Transfer by hold</h2>
-    <p class="sub">The gain from correlated peers (blue) against the same model reading 5 random peers (grey), in nats; above zero means the peers help. Whiskers are the day-block interval. Each panel is one architecture.</p>
-    <div class="legend"><span><i style="background:var(--accent)"></i>Correlated peers</span><span><i style="background:var(--muted)"></i>Random peers (control)</span></div>
+    <p class="sub" data-te="The gain from each stock's 5 transfer-entropy peers (blue), against the same model reading its 5 most correlated stocks (orange) or 5 random stocks (grey), in nats; above zero means the peers help. Whiskers are the day-block interval. Each panel is one architecture.">The gain from correlated peers (blue) against the same model reading 5 random peers (grey), in nats; above zero means the peers help. Whiskers are the day-block interval. Each panel is one architecture.</p>
+    <div class="legend" id="legendA"><span><i style="background:var(--accent)"></i>Correlated peers</span><span><i style="background:var(--muted)"></i>Random peers (control)</span></div>
     <div id="chartA"></div><details><summary>Table view</summary><div class="scroll" id="tableA"></div></details></section>
   <section class="card"><h2>Does it pay after costs?</h2>
-    <p class="sub">Net return per position of the long-short book on the correlated-peer model, after <span id="costTxt"></span>, in basis points. An edge needs the whole interval above zero and every other registered check.</p>
+    <p class="sub">Net return per position of the long-short book on the <span data-te="transfer-entropy-peer">correlated-peer</span> model, after <span id="costTxt"></span>, in basis points. An edge needs the whole interval above zero and every other registered check.</p>
     <div id="chartB"></div><details><summary>Table view</summary><div class="scroll" id="tableB"></div></details></section>
   <section class="card"><h2>Who leads whom</h2>
     <p class="sub">Rows are the leader (a peer), columns the follower. Darker means more of the follower's prediction error is removed by the leader's last hour. Stocks are grouped by sector.</p>
@@ -178,8 +178,14 @@ function drawTiles() {
 
 // ---- A: transfer by hold (small multiples) ----------------------------------------------------------------
 function drawA() {
-  const archs = D.meta.archs, holds = D.meta.holds, W = 1080, pw = W / archs.length, H = 270, m = { l: 62, r: 56, t: 30, b: 34 };
-  const lo = Math.min(0, ...D.cells.flatMap(c => [c.G_peers[1], c.G_random[1]])), hi = Math.max(0, ...D.cells.flatMap(c => [c.G_peers[2], c.G_random[2]]));
+  const archs = D.meta.archs, holds = D.meta.holds, W = 1080, pw = W / archs.length, H = 270, m = { l: 62, r: 84, t: 30, b: 34 };
+  const te = D.cells.some(c => c.G_corr);  // heat_v2: peers by transfer entropy, correlation peers as a control
+  if (te) {
+    document.querySelectorAll('[data-te]').forEach(n => n.textContent = n.dataset.te);
+  }
+  if (te) $('legendA').innerHTML = '<span><i style="background:var(--accent)"></i>Transfer-entropy peers</span><span><i style="background:var(--corr)"></i>Correlation peers</span><span><i style="background:var(--muted)"></i>Random peers</span>';
+  const keys = te ? ['G_peers', 'G_corr', 'G_random'] : ['G_peers', 'G_random'];
+  const lo = Math.min(0, ...D.cells.flatMap(c => keys.map(k => c[k][1]))), hi = Math.max(0, ...D.cells.flatMap(c => keys.map(k => c[k][2])));
   const pad = (hi - lo) * .08 || .001, y0 = lo - pad, y1 = hi + pad;
   const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Transfer in nats by hold for each architecture' });
   archs.forEach((a, k) => {
@@ -191,17 +197,20 @@ function drawA() {
     el('line', { x1: m.l, x2: pw - m.r, y1: Y(0), y2: Y(0), stroke: css('--axis'), 'stroke-width': 1.5 }, g);
     const t0 = el('text', { x: m.l, y: m.t - 14, class: 'ink', 'font-weight': 600 }, g); t0.textContent = a;
     holds.forEach((h, i) => { const t = el('text', { x: X(i), y: H - 10, 'text-anchor': 'middle', class: 'muted' }, g); t.textContent = h; });
-    const rows = holds.map(h => D.cells.find(c => c.arch === a && c.hold === h));
-    [['G_random', css('--muted'), 'random'], ['G_peers', css('--accent'), 'peers']].forEach(([key, col, lab]) => {
+    const rows = holds.map(h => D.cells.find(c => c.arch === a && c.hold === h)), ends = [];
+    [['G_random', css('--muted'), 'random'], ...(te ? [['G_corr', css('--corr'), 'correlation']] : []), ['G_peers', css('--accent'), te ? 'TE peers' : 'peers']].forEach(([key, col, lab]) => {
       el('polyline', { points: rows.map((r, i) => r ? `${X(i)},${Y(r[key][0])}` : null).filter(Boolean).join(' '), fill: 'none', stroke: col, 'stroke-width': 2 }, g);
       rows.forEach((r, i) => { if (!r) return; const [v, l, u] = r[key];
         el('line', { x1: X(i), x2: X(i), y1: Y(l), y2: Y(u), stroke: col, 'stroke-width': 1.25, opacity: .7 }, g);
         const dot = el('circle', { cx: X(i), cy: Y(v), r: 5, fill: col, stroke: css('--surface'), 'stroke-width': 2 }, g);
         const hit = el('circle', { cx: X(i), cy: Y(v), r: 14, fill: 'transparent' }, g);
-        hover(hit, () => `<b>${a}, ${r.hold}</b><br>${lab === 'peers' ? 'Correlated peers' : 'Random peers'}: <b>${fmt(v, 5)}</b> nats<br><span class="m">interval ${fmt(l, 5)} to ${fmt(u, 5)}</span>`); });
+        const name = { peers: 'Correlated peers', 'TE peers': 'Transfer-entropy peers', correlation: 'Correlation peers', random: 'Random peers' }[lab];
+        hover(hit, () => `<b>${a}, ${r.hold}</b><br>${name}: <b>${fmt(v, 5)}</b> nats<br><span class="m">interval ${fmt(l, 5)} to ${fmt(u, 5)}</span>`); });
       const last = rows.map((r, i) => [r, i]).filter(([r]) => r).pop();
-      if (last) { const t = el('text', { x: X(last[1]) + 10, y: Y(last[0][key][0]) + (key === 'G_peers' ? -6 : 14), class: 'ink' }, g); t.textContent = lab; }
+      if (last) ends.push({ x: X(last[1]) + 10, y: Y(last[0][key][0]) + 4, lab });
     });
+    ends.sort((p, q) => p.y - q.y).forEach((e, i, arr) => { if (i) e.y = Math.max(e.y, arr[i - 1].y + 13); });  // no overlaps
+    ends.forEach(e => { const t = el('text', { x: e.x, y: e.y, class: 'ink' }, g); t.textContent = e.lab; });
   });
   $('chartA').replaceChildren(svg);
   $('tableA').innerHTML = table(['Architecture', 'Hold', 'Peers', 'Random', 'Peers − random', 'Heat transfer'],

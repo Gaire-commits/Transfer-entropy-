@@ -11,7 +11,10 @@ from .data import BAR, OPEN, Panel
 
 
 def synthetic_panel(n_days=160, n_clusters=8, cluster_size=5, beta=0.5, lags=(2, 3), planted=True,
-                    gap_share=0.005, start="2020-01-02", seed=0) -> Panel:
+                    gap_share=0.005, start="2020-01-02", seed=0, cross=None) -> Panel:
+    """cross=+1 or -1: instead, each cluster's leader drives the NEXT cluster's stocks, with that sign.
+    Leader and followers then don't move together at the same moment, so correlation can't pick the
+    leader as a peer; only a lagged measure such as transfer entropy can."""
     rng = np.random.default_rng(seed)
     S, B = n_clusters * cluster_size, 78
     days = pd.bdate_range(start, periods=n_days)
@@ -24,7 +27,13 @@ def synthetic_panel(n_days=160, n_clusters=8, cluster_size=5, beta=0.5, lags=(2,
     idio = rng.normal(0, 1e-3, (T, S))
     r = 0.6 * market + 0.8 * factor + idio
     bar = np.tile(np.arange(B), n_days)
-    if planted:
+    if cross is not None:
+        for c in range(n_clusters):
+            lead, nxt = c * cluster_size, ((c + 1) % n_clusters) * cluster_size
+            for f in range(nxt + 1, nxt + cluster_size):
+                for lag in lags:
+                    r[lag:, f] += cross * beta * idio[:-lag, lead] * (bar[lag:] >= lag)
+    elif planted:
         leaders = np.arange(n_clusters) * cluster_size
         for c, lead in enumerate(leaders):
             for f in range(lead + 1, lead + cluster_size):

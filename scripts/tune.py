@@ -22,8 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from heat import config  # noqa: E402
 from heat.data import THESIS_SIP_DIR, Panel, build_panel, load_universe  # noqa: E402
 from heat.dataset import Gather, build_moments, split_by_date  # noqa: E402
-from heat.peers import monthly_peers  # noqa: E402
-from heat.run import pick_device  # noqa: E402
+from heat.dataset import variants_for  # noqa: E402
+from heat.run import build_peers, make_gather, pick_device  # noqa: E402
 from heat.tune import candidate_config, tune_arch  # noqa: E402
 
 
@@ -99,20 +99,17 @@ def main():
             print(f"{a}: already tuned, skipped (--rerun to tune again)")
     if todo:
         device = pick_device(args.device)
-        peers = monthly_peers(panel, cfg["peers"]["k"], cfg["peers"]["peer_days"], cfg["peers"]["min_share"],
-                              cfg["peers"]["seed"])
+        peers = build_peers(panel, cfg)
         moments = build_moments(panel, peers, mc["lookback"], mc["stride"], mc["lag"], mc["holds"])
         # Train and val only: the third return value (the test days) is dropped on the spot.
         train, val, _ = split_by_date(moments, panel, sc["train_end"], sc["val_end"], sc["embargo_days"])
         print(f"moments: train {len(train):,}, val {len(val):,}  (the test days are not used)")
-        tr_rows = np.unique(train.t)
-        scale = float(np.nanstd(panel.returns[tr_rows[0]: tr_rows[-1] + 1]))
-        gather = Gather(panel, peers, mc["lookback"], scale, device)
+        gather, _ = make_gather(panel, peers, train, cfg, device)
         base = {**tc, "samples_per_epoch": args.samples_per_epoch, "val_samples": args.val_samples}
         for arch in todo:
             result, trials = tune_arch(arch, gather, train, val, mc["holds"], mc["lookback"], base,
                                        n_trials=args.trials, budgets=tuple(args.budgets), seed=tc["seed"],
-                                       device=device)
+                                       device=device, variants=variants_for(cfg["peers"]))
             trials.to_csv(tdir / f"trials_{arch}.csv", index=False)
             (tdir / f"{arch}.json").write_text(json.dumps(result, indent=2))
     write_outputs(tdir, cfg, base_text, tc["archs"], args)

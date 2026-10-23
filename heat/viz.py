@@ -120,6 +120,7 @@ def build_payload(cells, heat, complete, universe, cfg_meta, peers=None, top_sto
         return {"arch": r["arch"], "hold": HOLD_LABELS.get(int(r["hold_bars"]), r["hold"]),
                 "G_peers": trip("G_peers", r["G_peers_ci"]), "G_random": trip("G_random", r["G_random_ci"]),
                 "G_diff": trip("G_peers_minus_random", r["G_peers_minus_random_ci"]),
+                **({"G_corr": trip("G_corr", r["G_corr_ci"])} if "G_corr" in r and isinstance(r.get("G_corr_ci"), tuple) else {}),
                 "net": trip("net_bps_peers", r["net_bps_peers_ci"]), "net_own": r["net_bps_own"],
                 "gross": r["gross_bps_peers"], "ic": r["ic_peers"], "verdict": r["verdict"],
                 "heat_transfer": bool(r["heat_transfer"]), "moments": int(r["moments"])}

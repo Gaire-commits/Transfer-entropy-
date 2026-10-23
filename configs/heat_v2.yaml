@@ -1,0 +1,90 @@
+# HEAT2: are there transfer-entropy relations between stocks, positive or negative, at 30 minutes to 4 hours,
+# and do they give an edge when deep models use them as features? Supersedes heat_v1 before either has scored
+# the test days (2024 onward): heat_v1 chose peers by correlation, which only finds stocks that move together
+# at the same moment and only positive ones; it used transfer entropy only to score the result.
+#
+# Transfer entropy, per month from the previous 250 trading days only (heat/te.py): for every source i and
+# target j, how much i's return over the last hour tells about j's return over the hold (30 min, 1, 2, 4 h,
+# after a one-bar lag) beyond what j's own last hour already tells (so j's own reversal, E5, is in the
+# baseline). Gaussian TE: rho = partial correlation of (j's hold return, i's last hour | j's last hour),
+# TE = -1/2 ln(1 - rho^2) nats. TE has no sign, so each stock's 5 peers are its 5 highest-TE sources at the
+# 30-minute hold, positive and negative relations alike. rho's sign says which: rho > 0, j followed i up;
+# rho < 0, j moved against i.
+#
+# Window: one trading year, not heat_v1's 60 days. On synthetic stocks with planted lagged leaders, 60 days
+# ranked the true leader first only 58% of the time (unrelated stocks reach the same TE by chance); 250 days
+# did 100% of the time. Every peer table uses the same window, so TE against correlation compares the method
+# only. Peers (and so moments) start once a year of history exists: training effectively starts in 2017.
+#
+# Features: the models read the last hour of the stock and of its 5 peers (as in heat_v1) plus, for each
+# peer, its signed TE strength (rho) into the stock at all four holds (5 x 4 constant channels, scaled by
+# their spread on the training days), and the TE-weighted peer signal per hold: the sum over peers of
+# rho x that peer's return, bar by bar (4 channels), so a negative relation pushes the prediction against
+# the peer wherever it sits among the slots. Every peer variant gets the same features for its own peers.
+#
+# Variants (same architecture, initial weights, batches and budget; only the peers differ):
+#   own:    no peers (the stock's own past, including its reversal);
+#   peers:  the 5 highest-TE sources (this experiment);
+#   random: 5 random stocks, redrawn monthly (E12's control);
+#   corr:   heat_v1's 5 most correlated stocks (E12's rule).
+# Hyperparameters: heat_v1's defaults. Tuning heat_v1 on the validation days (2026-10-22) kept the defaults
+# for all three architectures (no setting beat them beyond seed noise), so no tuning is repeated here.
+#
+# PROTOCOL, fixed before any result (2026-10-23). For each architecture and hold (12 cells), on the test
+# days only (2024-01-02 onward), with 99% day-block intervals:
+#   1. net_positive: the TE-peer model's quintile long-short book earns more than 2 bps per position, net.
+#   2. beats_no_peers: its net minus the no-peer model's net, interval above zero.
+#   3. beats_random_peers: G(TE peers) minus G(random peers), interval above zero.
+#   4. beats_correlation_peers: G(TE peers) minus G(correlation peers), interval above zero (transfer
+#      entropy picks better peers than correlation).
+#   5. both_halves_positive: the net is above zero in both halves of the test days (point estimates).
+#   6. fdr: Benjamini-Hochberg at q = 0.05 over the 12 cells, on the day-block p-value of check 1.
+# A cell with all six is an EDGE; any other cell is NO EDGE, with the failed checks named.
+# Reported, not decisive: "heat transfer" (G(TE peers) > 0 and beats random peers), G for every variant,
+# gross returns, rank IC, how many TE peers are negative relations, the heat map.
+experiment: heat_v2
+
+data:
+  universe: universe/sp500.csv
+  timeframe: 5Min
+  feed: sip
+
+split:  # whole trading days, in time order
+  train_end: "2021-12-31"
+  val_end: "2023-12-31"
+  embargo_days: 1
+
+peers:
+  select: te  # transfer entropy, positive and negative relations (heat_v1: E12's correlation rule)
+  select_hold: 6  # peers ranked by TE at the 30-minute hold; features at every hold
+  k: 5
+  peer_days: 250  # one trading year (heat_v1: 60); applies to every peer table, so TE vs correlation is a fair test
+  min_share: 0.8
+  seed: 0
+
+moments:  # E5/E12 geometry
+  lookback: 12  # bars (1 hour) of the stock and its peers
+  stride: 6  # a moment every 30 minutes
+  lag: 1  # enter one bar after the signal bar
+  holds: [6, 12, 24, 48]  # 30 min, 1 h, 2 h, 4 h
+
+train:
+  archs: [bilstm, resnet1d, transformer]
+  size: 64
+  lr: 0.001
+  weight_decay: 0.0001
+  batch: 4096
+  samples_per_epoch: 2000000
+  max_epochs: 30
+  patience: 4
+  val_samples: 500000
+  seed: 0
+
+evaluation:
+  level: 0.99
+  bootstrap: 2000
+  cost_bps: 2.0
+  q: 0.2  # quintile book
+  min_stocks: 20  # a moment needs this many stocks
+  fdr_q: 0.05
+  heat_samples: 300000

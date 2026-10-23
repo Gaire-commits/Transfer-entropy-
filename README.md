@@ -10,6 +10,32 @@ linear rank signal, predict no better than random peers (E12). This asks the que
 models and transfer entropy: does a stock's next 30 minutes to 4 hours follow the recent moves of the
 stocks it moves with, beyond its own reversal, and is that an edge after costs?
 
+## HEAT2: transfer entropy between companies as the feature (registered in [`configs/heat_v2.yaml`](configs/heat_v2.yaml), 2026-10-23)
+
+HEAT1 chose peers by **correlation** (only stocks that move together at the same moment, only positive) and
+used transfer entropy only to score the result. HEAT2 puts transfer entropy at the centre, and supersedes HEAT1
+before either has scored the test days.
+
+1. **TE between every pair of S&P 500 stocks, every month, from the previous trading year only**
+   ([`heat/te.py`](heat/te.py)): stock A's last hour → stock B's next 30 min / 1 h / 2 h / 4 h, beyond what B's
+   own last hour explains. Gaussian TE: rho = partial correlation, TE = -1/2 ln(1 - rho^2).
+2. **Peers = each stock's 5 highest-TE sources, positive or negative.** rho > 0: B followed A; rho < 0: B moved
+   against A. The report says what share of TE peers are negative relations.
+3. **TE is the models' feature:** the peers' last hour, each peer's signed TE strength at every hold, and the
+   TE-weighted peer signal (sum of strength × peer return, per bar), so a negative relation pushes the
+   prediction against the peer.
+4. **Controls:** no peers, random peers, and the 5 most correlated stocks. An edge must also beat correlation
+   peers (`beats_correlation_peers`).
+
+**Why a year, not 60 days:** with 60 days, chance makes unrelated stocks look as strong as a real leader. On
+synthetic stocks the true leader ranked first 58% of the time with 60 days and 100% with 250.
+
+**Controls on synthetic stocks** ([`tests/test_controls_v2.py`](tests/test_controls_v2.py)): hidden *negative*
+leaders in a different cluster, which correlation cannot see, are found by TE peers as an edge that beats
+correlation peers (correlation and random peers gain nothing); with nothing planted, no edge.
+
+Hyperparameters are HEAT1's defaults: tuning HEAT1 on the validation days kept them for all three models.
+
 ## The experiment (HEAT1, registered in [`configs/heat_v1.yaml`](configs/heat_v1.yaml), 2026-10-20)
 
 | | |

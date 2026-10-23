@@ -87,9 +87,12 @@ def evaluate_arch(preds: dict, test: Moments, holds, panel_days, ecfg, rng):
         gain = lambda v, w: 0.5 * np.log((w @ sse["own"]) / (w @ sse[v]))
         ones = np.ones(n_days)
         row = {"hold_bars": h, "hold": f"{h * 5} min", "moments": int(ok.sum()), "days": n_days}
-        for v in ("peers", "random"):
+        for v in [v for v in ("peers", "random", "corr") if v in preds]:
             row[f"G_{v}"] = float(gain(v, ones))
             row[f"G_{v}_ci"] = interval(gain(v, W), level)
+        if "corr" in preds:  # heat_v2: TE-chosen peers against heat_v1's correlation-chosen peers
+            row["G_peers_minus_corr"] = float(0.5 * np.log(sse["corr"].sum() / sse["peers"].sum()))
+            row["G_peers_minus_corr_ci"] = interval(0.5 * np.log((W @ sse["corr"]) / (W @ sse["peers"])), level)
         diff = 0.5 * np.log((W @ sse["random"]) / (W @ sse["peers"]))
         row["G_peers_minus_random"] = float(0.5 * np.log(sse["random"].sum() / sse["peers"].sum()))
         row["G_peers_minus_random_ci"] = interval(diff, level)
@@ -128,6 +131,8 @@ def verdicts(table: pd.DataFrame, q=0.05) -> pd.DataFrame:
         "both_halves_positive": (t["net_bps_peers_first_half"] > 0) & (t["net_bps_peers_second_half"] > 0),
         "fdr": t["fdr"],
     }
+    if "G_peers_minus_corr_ci" in t:  # heat_v2: transfer entropy must beat correlation at choosing peers
+        checks["beats_correlation_peers"] = t["G_peers_minus_corr_ci"].map(lambda c: c[0] > 0)
     for k, v in checks.items():
         t[k] = v.astype(bool)
     failed = lambda r: [k for k in checks if not r[k]]
@@ -164,6 +169,9 @@ def heat_flows(model, gather, test: Moments, y_scale, hold_index, symbols, max_s
                 sl = slice(i, i + batch)
                 times = t[sl, None] - gather.offsets[None, :]
                 x = gather.R[times[:, :, None], stk[sl, None, :]]
+                f = gather.features(s[sl], mo[sl], "peers")  # TE features stay with the real pair
+                if f is not None:  # the weighted signal uses the (possibly swapped) peer history
+                    x = torch.cat([x, f, gather.weighted_signal(x, s[sl], mo[sl], "peers")], dim=2)
                 out.append(model(x)[:, hold_index].to("cpu").numpy() * scale)
         return (np.concatenate(out) - y) ** 2
 

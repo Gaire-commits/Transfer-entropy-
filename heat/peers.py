@@ -7,7 +7,7 @@ are used, and the choice is kept for the month. A stock is eligible if it has a 
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -57,9 +57,25 @@ class PeerTable:
     correlated: np.ndarray  # (months, stocks, k)
     random: np.ndarray
     rho: np.ndarray
+    # heat_v2 (select="te"): peers chosen by transfer entropy, and for every table the signed TE strength
+    # (partial correlation) of each chosen peer into the stock at each hold: (months, stocks, k, holds).
+    te: np.ndarray | None = None
+    features: dict = field(default_factory=dict)
+    feature_holds: tuple = ()
+
+    def table(self, variant):
+        """The peer table a model variant reads: 'peers' is the experiment's own selection."""
+        if variant == "corr":
+            return self.correlated
+        if variant == "random":
+            return self.random
+        return self.te if self.te is not None else self.correlated
 
 
-def monthly_peers(panel: Panel, k=5, peer_days=60, min_share=0.8, seed=0) -> PeerTable:
+def monthly_peers(panel: Panel, k=5, peer_days=60, min_share=0.8, seed=0, select="corr", lookback=12, lag=1,
+                  holds=(6, 12, 24, 48), select_hold=6) -> PeerTable:
+    """select="corr": E12's rule (heat_v1). select="te": peers by transfer entropy at `select_hold`
+    (positive or negative relations alike), plus signed TE features at every hold for all tables."""
     rng = np.random.default_rng(seed)
     days = panel.days
     n_days = len(days)
@@ -80,4 +96,25 @@ def monthly_peers(panel: Panel, k=5, peer_days=60, min_share=0.8, seed=0) -> Pee
         month_of_day[d0:end] = m
     S = panel.returns.shape[1]
     stack = lambda xs, fill: np.stack(xs) if xs else np.full((0, S, k), fill)
-    return PeerTable(first_of_month, month_of_day, stack(corr, -1), stack(rand, -1), stack(rhos, np.nan))
+    table = PeerTable(first_of_month, month_of_day, stack(corr, -1), stack(rand, -1), stack(rhos, np.nan))
+    if select == "corr":
+        return table
+    if select != "te":
+        raise ValueError("select must be 'corr' or 'te'")
+    from .te import monthly_rho, pick_te_peers
+
+    rho = monthly_rho(panel, first_of_month, peer_days, lookback, lag, tuple(holds), min_share)
+    table.te = np.stack([pick_te_peers(rho[select_hold][m], k) for m in range(len(first_of_month))]) \
+        if len(first_of_month) else np.full((0, S, k), -1)
+    table.feature_holds = tuple(holds)
+    rows = np.arange(S)[:, None]
+    for name in ("peers", "random", "corr"):
+        peers = table.table(name)
+        feat = np.zeros(peers.shape + (len(holds),), np.float32)
+        for m in range(len(first_of_month)):
+            safe = np.where(peers[m] >= 0, peers[m], 0)
+            for c, h in enumerate(holds):
+                vals = rho[h][m][rows, safe]
+                feat[m, :, :, c] = np.where((peers[m] >= 0) & np.isfinite(vals), vals, 0.0)
+        table.features[name] = feat
+    return table
