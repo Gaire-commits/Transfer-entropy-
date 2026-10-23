@@ -1,7 +1,14 @@
 # HEAT2: are there transfer-entropy relations between stocks, positive or negative, at 30 minutes to 4 hours,
-# and do they give an edge when deep models use them as features? Supersedes heat_v1 before either has scored
-# the test days (2024 onward): heat_v1 chose peers by correlation, which only finds stocks that move together
-# at the same moment and only positive ones; it used transfer entropy only to score the result.
+# and do they give an edge when deep models use them as features? heat_v1 chose peers by correlation, which only
+# finds stocks that move together at the same moment and only positive ones, and used transfer entropy only to
+# score the result; this puts transfer entropy at the centre, as the research question asked.
+#
+# DISCLOSURE. heat_v1 had already scored the test days (2024-01-02 onward) on 2026-10-22, before this config was
+# written: 0 of 12 cells with an edge, 0 of 12 with heat transfer. heat_v2's design comes from the research
+# question (TE between companies as a feature), not from heat_v1's test numbers, which were not looked at when it
+# was designed; but the 2024+ days are no longer unseen. So heat_v2's test is a second look at those days, to be
+# reported as such next to heat_v1. The untouched confirmation of any heat_v2 edge is a forward test on trading
+# days after 2026-10-23 (the thesis LIVE_PLAN), run with this rule unchanged.
 #
 # Transfer entropy, per month from the previous 250 trading days only (heat/te.py): for every source i and
 # target j, how much i's return over the last hour tells about j's return over the hold (30 min, 1, 2, 4 h,
@@ -30,7 +37,7 @@
 # Hyperparameters: heat_v1's defaults. Tuning heat_v1 on the validation days (2026-10-22) kept the defaults
 # for all three architectures (no setting beat them beyond seed noise), so no tuning is repeated here.
 #
-# PROTOCOL, fixed before any result (2026-10-23). For each architecture and hold (12 cells), on the test
+# PROTOCOL, fixed before any heat_v2 result (2026-10-23). For each architecture and hold (12 cells), on the test
 # days only (2024-01-02 onward), with 99% day-block intervals:
 #   1. net_positive: the TE-peer model's quintile long-short book earns more than 2 bps per position, net.
 #   2. beats_no_peers: its net minus the no-peer model's net, interval above zero.

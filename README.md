@@ -10,6 +10,22 @@ linear rank signal, predict no better than random peers (E12). This asks the que
 models and transfer entropy: does a stock's next 30 minutes to 4 hours follow the recent moves of the
 stocks it moves with, beyond its own reversal, and is that an edge after costs?
 
+## Results so far
+
+**HEAT1, registered run (2026-10-22, A100; test days 2024-01-02 onward, 3.29 million test moments).**
+**0 of 12 cells have an edge; 0 of 12 show heat transfer.** Correlation-chosen peers add no predictive
+information (G between about -0.001 and +0.0003 nats, never above random peers); the long-short book loses about
+2 bps net in every cell, i.e. it earns about nothing gross. The peer models' book earns about +0.3 bps more than the
+no-peer models in several cells, but random peers do as well, so it isn't the correlated stocks. 200 of 68,898
+pairs clear the heat-map screen, against about 93 expected by chance with optimistic error bars: not a finding.
+This replicates E12 (correlated peers don't lead) with deep models. The run, with its outputs, is
+[`notebooks/runs/2026-10-22_heat_v1_registered_run.ipynb`](notebooks/runs/2026-10-22_heat_v1_registered_run.ipynb).
+
+**Tuning (2026-10-22, validation days only):** no setting beat the defaults beyond seed noise for any model.
+
+**Disclosure.** HEAT2 was registered after HEAT1 had scored the test days (see its config); its test is a second
+look at the same days, and its untouched confirmation is a forward test on trading days after 2026-10-23.
+
 ## HEAT2: transfer entropy between companies as the feature (registered in [`configs/heat_v2.yaml`](configs/heat_v2.yaml), 2026-10-23)
 
 HEAT1 chose peers by **correlation** (only stocks that move together at the same moment, only positive) and
