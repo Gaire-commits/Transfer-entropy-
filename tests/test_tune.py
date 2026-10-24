@@ -96,6 +96,6 @@ def test_per_arch_settings_are_applied_by_the_run(setup, tmp_path):
     cfg["evaluation"].update(bootstrap=30, heat_samples=0)
     run_experiment(panel, cfg, tmp_path, log=lambda m: None)
     import torch
-    sd = torch.load(tmp_path / "resnet1d_peers.pt")
+    sd = torch.load(tmp_path / "variants" / "resnet1d_peers.pt")
     assert sd["stem.weight"].shape[0] == 16  # width from per_arch, not the base size of 8
     assert sum(k.startswith("blocks.") and k.endswith("net.0.weight") for k in sd) == 2  # depth 2

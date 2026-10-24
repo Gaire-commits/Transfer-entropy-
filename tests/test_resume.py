@@ -26,11 +26,11 @@ def test_one_arch_at_a_time(tmp_path):
     assert "verdict" not in table and (tmp_path / "cells_partial.csv").exists()
     assert not (tmp_path / "cells.csv").exists()
     assert "PARTIAL: 1 of 2" in (tmp_path / "report.md").read_text()
-    first = (tmp_path / "resnet1d_peers.pt").stat().st_mtime_ns
+    first = (tmp_path / "variants" / "resnet1d_peers.pt").stat().st_mtime_ns
 
     logs = []
     table, _ = run_experiment(panel, cfg, tmp_path, log=logs.append)  # resume: only bilstm runs
     assert any("resnet1d: already scored, skipped" in m for m in logs)
-    assert (tmp_path / "resnet1d_peers.pt").stat().st_mtime_ns == first  # not retrained
+    assert (tmp_path / "variants" / "resnet1d_peers.pt").stat().st_mtime_ns == first  # not retrained
     assert (tmp_path / "cells.csv").exists() and len(table) == 8 and table["verdict"].notna().all()
     assert "PARTIAL" not in (tmp_path / "report.md").read_text()
