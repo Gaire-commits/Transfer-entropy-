@@ -49,12 +49,19 @@ def _saved(out, arch):
     return out is not None and (out / f"rows_{arch}.json").exists()
 
 
-def run_experiment(panel, cfg, out_dir=None, device="auto", log=print, archs=None, rerun=False):
+def run_experiment(panel, cfg, out_dir=None, device="auto", log=print, archs=None, rerun=False, cache_dir=None):
     """Train, predict and score each architecture in `archs` (default: the config's). Each finished
     architecture is saved at once (rows_<arch>.json, heat_<arch>.csv), and one already saved is
     skipped unless `rerun`, so a dropped session resumes without scoring the test days twice.
     The verdict (false-discovery control over every registered cell) is made only when all of the
-    config's architectures are in."""
+    config's architectures are in.
+
+    Nothing is computed twice: the peer tables come from `cache_dir` when this panel and these settings
+    were seen before, and each trained variant (weights + test predictions) is saved to
+    <out>/variants the moment it is done and reused on a rerun (unless `rerun`)."""
+    from . import cache
+    from .models import make_model
+
     device = pick_device(device)
     out = Path(out_dir) if out_dir else None
     if out:
@@ -71,7 +78,8 @@ def run_experiment(panel, cfg, out_dir=None, device="auto", log=print, archs=Non
     rows, heat = {}, {}
     if todo:
         log(f"peers: k={cfg['peers']['k']}, {cfg['peers']['peer_days']} days, monthly")
-        peers = build_peers(panel, cfg)
+        peers = cache.cached_peers(panel, cfg, cache_dir, lambda: build_peers(panel, cfg), log)
+        panel_fp = cache.panel_fingerprint(panel)
         moments = build_moments(panel, peers, mc["lookback"], mc["stride"], mc["lag"], holds)
         train, val, test = split_by_date(moments, panel, sc["train_end"], sc["val_end"], sc["embargo_days"],
                                          sc.get("test_end"))
@@ -94,12 +102,24 @@ def run_experiment(panel, cfg, out_dir=None, device="auto", log=print, archs=Non
         rng = np.random.default_rng([tc["seed"], registered.index(arch) if arch in registered else 99])
         models, preds = {}, {}
         tca = {**tc, **tc.get("per_arch", {}).get(arch, {})}  # tuned settings, if the config has them
+        vdir = out / "variants" if out else None
+        cfg_a = {**cfg, "train": tca}
         for variant in variants_for(cfg["peers"]):
-            model, info = train_variant(arch, variant, gather, train, val, holds, mc["lookback"], tca, device, log)
+            vkey = cache.variant_key(panel_fp, cfg_a, arch, variant, len(test))
+            hit = None if (rerun or vdir is None) else cache.load_variant(vdir, arch, variant, vkey)
+            if hit is not None:
+                state, preds[variant], info = hit
+                hp = {k: tca[k] for k in ("dropout", "depth", "kernel", "heads") if k in tca}
+                model = make_model(arch, gather.channels, len(holds), mc["lookback"], tca["size"], hp)
+                model.load_state_dict(state)
+                model = model.to(device).eval()
+                log(f"  {arch}/{variant}: reused (trained earlier with these exact settings)")
+            else:
+                model, info = train_variant(arch, variant, gather, train, val, holds, mc["lookback"], tca, device, log)
+                preds[variant] = predict(model, gather, test, variant, info["y_scale"], device=device)
+                if vdir is not None:  # saved at once: a dropped session loses at most this one variant
+                    cache.save_variant(vdir, arch, variant, vkey, to_cpu_state(model), preds[variant], info)
             models[variant] = (model, info)
-            preds[variant] = predict(model, gather, test, variant, info["y_scale"], device=device)
-            if out:
-                torch.save(to_cpu_state(model), out / f"{arch}_{variant}.pt")
         rows[arch] = [{"arch": arch, **r} for r in evaluate_arch(preds, test, holds, panel.days, ec, rng)]
         flows = []
         if ec.get("heat_samples"):

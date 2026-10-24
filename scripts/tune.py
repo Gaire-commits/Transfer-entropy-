@@ -99,7 +99,8 @@ def main():
             print(f"{a}: already tuned, skipped (--rerun to tune again)")
     if todo:
         device = pick_device(args.device)
-        peers = build_peers(panel, cfg)
+        from heat.cache import cached_peers
+        peers = cached_peers(panel, cfg, out / "cache", lambda: build_peers(panel, cfg))
         moments = build_moments(panel, peers, mc["lookback"], mc["stride"], mc["lag"], mc["holds"])
         # Train and val only: the third return value (the test days) is dropped on the spot.
         train, val, _ = split_by_date(moments, panel, sc["train_end"], sc["val_end"], sc["embargo_days"])

@@ -36,11 +36,14 @@ def main():
     ap.add_argument("--panel", help="a panel.npz built earlier (e.g. by another experiment's run); "
                                     "default <out-dir>/panel.npz, built if missing")
     ap.add_argument("--rerun", action="store_true",
-                    help="score already-scored architectures again (disclose it in the write-up)")
+                    help="score already-scored architectures again, retraining them (disclose it in the write-up)")
+    ap.add_argument("--cache-dir", help="where peer/TE tables are cached (default <out-dir>/cache); shared by the "
+                                        "check run and the registered run")
     args = ap.parse_args()
 
     cfg = config.load(args.config)
     out = Path(args.out_dir)
+    cache_dir = Path(args.cache_dir) if args.cache_dir else out / "cache"
     panel_path = Path(args.panel) if args.panel else out / "panel.npz"
     if args.check:
         cfg["split"].update(train_end="2019-12-31", val_end="2020-12-31", test_end="2021-12-31")
@@ -58,7 +61,7 @@ def main():
         print(f"panel built and saved: {panel.returns.shape[0]:,} bars x {len(panel.symbols)} stocks")
 
     # Architectures already scored in <out> are skipped, so a dropped session just resumes.
-    run_experiment(panel, cfg, out, args.device, archs=args.archs, rerun=args.rerun)
+    run_experiment(panel, cfg, out, args.device, archs=args.archs, rerun=args.rerun, cache_dir=cache_dir)
     print((out / "report.md").read_text())
     try:  # the pictures must never break a run
         ev = cfg["evaluation"]

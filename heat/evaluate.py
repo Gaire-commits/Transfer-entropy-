@@ -61,13 +61,19 @@ def book_positions(pred, y, t, q=0.2, min_stocks=20):
 
 
 def rank_ic_by_moment(pred, y, t, min_stocks=20):
+    """Spearman correlation of predictions and outcomes across the stocks at each signal bar (moments with
+    fewer than `min_stocks` are skipped). Vectorised: Pearson of the ranks from per-moment sums."""
     ok = np.isfinite(y) & np.isfinite(pred)
     df = pd.DataFrame({"t": t[ok], "p": pred[ok], "y": y[ok]})
-    df["rp"] = df.groupby("t")["p"].rank()
-    df["ry"] = df.groupby("t")["y"].rank()
     g = df.groupby("t")
-    ic = g.apply(lambda d: d["rp"].corr(d["ry"]) if len(d) >= min_stocks else np.nan, include_groups=False)
-    return ic.dropna()
+    df["rp"], df["ry"] = g["p"].rank(), g["y"].rank()
+    df["pp"], df["yy"], df["py"] = df["rp"] ** 2, df["ry"] ** 2, df["rp"] * df["ry"]
+    s = df.groupby("t")[["rp", "ry", "pp", "yy", "py"]].sum()
+    n = df.groupby("t").size()
+    cov = s["py"] - s["rp"] * s["ry"] / n
+    var_p, var_y = s["pp"] - s["rp"] ** 2 / n, s["yy"] - s["ry"] ** 2 / n
+    ic = cov / np.sqrt(var_p * var_y)
+    return ic[(n >= min_stocks) & (var_p > 0) & (var_y > 0)].dropna()
 
 
 # ---- one architecture, all holds ----------------------------------------------
