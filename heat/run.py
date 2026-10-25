@@ -25,6 +25,15 @@ def pick_device(name="auto"):
     return "cpu"  # MPS lacks some ops used here; CPU is the safe local default
 
 
+def apply_check(cfg):
+    """The --check run's settings: train to 2019, validate on 2020, score 2021, inside the training years."""
+    cfg["split"].update(train_end="2019-12-31", val_end="2020-12-31", test_end="2021-12-31")
+    cfg["train"].update(samples_per_epoch=300_000, max_epochs=3, val_samples=100_000)
+    cfg["evaluation"].update(bootstrap=300, heat_samples=50_000)
+    cfg["check"] = "2021 (inside the registered training years)"
+    return cfg
+
+
 def build_peers(panel, cfg):
     """The month-by-month peer tables the config asks for (E12's correlation rule, or transfer entropy)."""
     pc, mc = cfg["peers"], cfg["moments"]

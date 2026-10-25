@@ -52,6 +52,21 @@ correlation peers (correlation and random peers gain nothing); with nothing plan
 
 Hyperparameters are HEAT1's defaults: tuning HEAT1 on the validation days kept them for all three models.
 
+## Macro release days (exploratory)
+
+[`heat/events.py`](heat/events.py) and [`heat/event_analysis.py`](heat/event_analysis.py), run by
+[`scripts/events.py`](scripts/events.py) (notebook section 7): are transfer and the edge different on **jobs
+report, CPI, GDP and FOMC days**? Official release dates come from FRED (release ids 50, 10, 53, 101: BLS, BLS,
+BEA, Federal Reserve; free key in the Colab secret `FRED_API_KEY`) and are saved, so the key is needed once.
+Jobs, CPI and GDP come out at 8:30 am, before the open, so they are split by day; FOMC decisions come at 2:00
+pm, so FOMC is also split by whether a hold spans 2:00 pm. It reuses the saved test predictions, so nothing
+is retrained, and it is exploratory: no registered rule, no verdict, many subsets.
+
+The models are not told which days are release days. A link that exists only on release days is therefore
+diluted (TE is estimated over all days and the models learn an average), so this split can show where
+transfer is concentrated, not discover a link that only exists on those days. Feeding the calendar to the
+models would need a new registered experiment.
+
 ## The experiment (HEAT1, registered in [`configs/heat_v1.yaml`](configs/heat_v1.yaml), 2026-10-20)
 
 | | |

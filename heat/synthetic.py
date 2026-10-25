@@ -11,10 +11,11 @@ from .data import BAR, OPEN, Panel
 
 
 def synthetic_panel(n_days=160, n_clusters=8, cluster_size=5, beta=0.5, lags=(2, 3), planted=True,
-                    gap_share=0.005, start="2020-01-02", seed=0, cross=None) -> Panel:
+                    gap_share=0.005, start="2020-01-02", seed=0, cross=None, active_days=None) -> Panel:
     """cross=+1 or -1: instead, each cluster's leader drives the NEXT cluster's stocks, with that sign.
     Leader and followers then don't move together at the same moment, so correlation can't pick the
-    leader as a peer; only a lagged measure such as transfer entropy can."""
+    leader as a peer; only a lagged measure such as transfer entropy can.
+    active_days: optional bool array (one per day): the planted effect exists only on those days."""
     rng = np.random.default_rng(seed)
     S, B = n_clusters * cluster_size, 78
     days = pd.bdate_range(start, periods=n_days)
@@ -27,18 +28,19 @@ def synthetic_panel(n_days=160, n_clusters=8, cluster_size=5, beta=0.5, lags=(2,
     idio = rng.normal(0, 1e-3, (T, S))
     r = 0.6 * market + 0.8 * factor + idio
     bar = np.tile(np.arange(B), n_days)
+    on = np.ones(T) if active_days is None else np.repeat(np.asarray(active_days, float), B)
     if cross is not None:
         for c in range(n_clusters):
             lead, nxt = c * cluster_size, ((c + 1) % n_clusters) * cluster_size
             for f in range(nxt + 1, nxt + cluster_size):
                 for lag in lags:
-                    r[lag:, f] += cross * beta * idio[:-lag, lead] * (bar[lag:] >= lag)
+                    r[lag:, f] += cross * beta * idio[:-lag, lead] * (bar[lag:] >= lag) * on[lag:]
     elif planted:
         leaders = np.arange(n_clusters) * cluster_size
         for c, lead in enumerate(leaders):
             for f in range(lead + 1, lead + cluster_size):
                 for lag in lags:
-                    r[lag:, f] += beta * idio[:-lag, lead] * (bar[lag:] >= lag)  # within the day
+                    r[lag:, f] += beta * idio[:-lag, lead] * (bar[lag:] >= lag) * on[lag:]  # within the day
     r[bar == 0] = np.nan  # no overnight return
     r[rng.random((T, S)) < gap_share] = np.nan
     finite = np.isfinite(r)

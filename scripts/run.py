@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from heat import config  # noqa: E402
 from heat.data import THESIS_SIP_DIR, Panel, build_panel, load_universe  # noqa: E402
-from heat.run import run_experiment  # noqa: E402
+from heat.run import apply_check, run_experiment  # noqa: E402
 from heat.viz import write_report  # noqa: E402
 
 
@@ -46,10 +46,7 @@ def main():
     cache_dir = Path(args.cache_dir) if args.cache_dir else out / "cache"
     panel_path = Path(args.panel) if args.panel else out / "panel.npz"
     if args.check:
-        cfg["split"].update(train_end="2019-12-31", val_end="2020-12-31", test_end="2021-12-31")
-        cfg["train"].update(samples_per_epoch=300_000, max_epochs=3, val_samples=100_000)
-        cfg["evaluation"].update(bootstrap=300, heat_samples=50_000)
-        cfg["check"] = "2021 (inside the registered training years)"
+        apply_check(cfg)
         out = out / "check"
     if panel_path.exists():
         panel = Panel.load(panel_path)
