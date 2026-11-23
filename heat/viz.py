@@ -23,8 +23,11 @@ MAX_FLOWS = 3000  # strongest source -> target pairs kept per (architecture, hol
 
 
 def hold_label(text) -> str:
-    """'60 min' (how a run labels a hold) -> '1 h' (how the report labels it)."""
-    bars = int(str(text).split()[0]) // 5
+    """'60 min' (how a run labels a hold) -> '1 h' (how the report labels it); '1 d' stays '1 d'."""
+    text = str(text)
+    if not text.endswith("min"):
+        return text
+    bars = int(text.split()[0]) // 5
     return HOLD_LABELS.get(bars, f"{bars * 5} min")
 
 
@@ -98,7 +101,7 @@ def build_payload(cells, heat, complete, universe, cfg_meta, peers=None, top_sto
     name = dict(zip(universe["symbol"], universe.get("name", universe["symbol"])))
     holds = sorted(cells["hold_bars"].unique())
     archs = list(dict.fromkeys(cells["arch"]))
-    hold_labels = [HOLD_LABELS.get(int(h), f"{int(h) * 5} min") for h in holds]
+    hold_labels = [hold_label(cells.loc[cells["hold_bars"] == h, "hold"].iloc[0]) for h in holds]
 
     flows, used = {}, set()
     for (arch, hold), g in (heat.groupby(["arch", "hold"]) if len(heat) else []):
@@ -117,7 +120,7 @@ def build_payload(cells, heat, complete, universe, cfg_meta, peers=None, top_sto
 
     def cell_row(r):
         trip = lambda v, ci: [r[v], ci[0], ci[1]]
-        return {"arch": r["arch"], "hold": HOLD_LABELS.get(int(r["hold_bars"]), r["hold"]),
+        return {"arch": r["arch"], "hold": hold_label(r["hold"]),
                 "G_peers": trip("G_peers", r["G_peers_ci"]), "G_random": trip("G_random", r["G_random_ci"]),
                 "G_diff": trip("G_peers_minus_random", r["G_peers_minus_random_ci"]),
                 **({"G_corr": trip("G_corr", r["G_corr_ci"])} if "G_corr" in r and isinstance(r.get("G_corr_ci"), tuple) else {}),

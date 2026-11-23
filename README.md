@@ -10,6 +10,30 @@ linear rank signal, predict no better than random peers (E12). This asks the que
 models and transfer entropy: does a stock's next 30 minutes to 4 hours follow the recent moves of the
 stocks it moves with, beyond its own reversal, and is that an edge after costs?
 
+## HEAT3: 25+ years of daily data from Yahoo Finance (registered in [`configs/heat_v3.yaml`](configs/heat_v3.yaml), 2026-11-23)
+
+The same question and method as HEAT2 (transfer entropy between companies, positive and negative relations, as
+the peer choice and as a feature of BiLSTM / CNN-ResNet / Transformer models), moved from 5-minute bars to
+**daily bars from 2000 onward**, from Yahoo Finance ([`heat/yahoo.py`](heat/yahoo.py)). Yahoo only serves
+5-minute bars for the last 60 days, so a long history means daily bars.
+
+| | HEAT2 (5-minute) | HEAT3 (daily) |
+|---|---|---|
+| Data | thesis SIP bars, 2016–2026 | Yahoo adjusted daily closes, 2000 onward |
+| Model input | last hour | last 20 trading days |
+| Holds | 30 min, 1, 2, 4 h | 1, 2, 5, 10 trading days |
+| TE source | the last hour | the last trading day (the classic daily lead-lag, Lo and MacKinlay 1990) |
+| TE window | 1 year | 3 years (daily data has far fewer points) |
+| Split | train / val / test by year | train to 2014, val 2015–2018, **test 2019 onward**, 11-day embargo |
+| Intervals | resample days | resample 21-day blocks (multi-day holds overlap) |
+
+**Survivorship.** Yahoo has no prices for companies that left the index, so the universe is today's S&P 500
+traced back; a stock enters when its prices start. This biases levels more than market-relative comparisons,
+but it must be stated. A daily log return beyond ±100% is treated as a Yahoo data error.
+
+Controls on synthetic daily data ([`tests/test_daily.py`](tests/test_daily.py)): hidden negative leaders in
+another cluster are found by TE peers as an edge at 1 day that beats correlation peers; nothing planted, no edge.
+
 ## Results so far
 
 **HEAT1, registered run (2026-10-22, A100; test days 2024-01-02 onward, 3.29 million test moments).**

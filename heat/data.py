@@ -32,12 +32,21 @@ THESIS_SIP_DIR = "/content/drive/MyDrive/entropy-gate-pipeline-data/data/bars_si
 
 @dataclass
 class Panel:
-    """Market-relative returns on the grid. Row i is the bar starting at `times[i]`."""
+    """Market-relative returns on the grid. Row i is the bar starting at `times[i]`.
+
+    `day` is the calendar trading day (splits and intervals use it). `session` is the stretch a
+    lookback or a hold may not leave: for 5-minute bars the trading day itself (no overnight), for
+    daily bars the whole series (one row per day, holds run across days). `bar` counts within it."""
     times: pd.DatetimeIndex  # US/Eastern, naive
-    day: np.ndarray  # (T,) day number, 0..n_days-1
-    bar: np.ndarray  # (T,) bar of the day, 0 = 09:30
+    day: np.ndarray  # (T,) calendar day number, 0..n_days-1
+    bar: np.ndarray  # (T,) position within the session (intraday: 0 = 09:30)
     symbols: list
     returns: np.ndarray  # (T, S) float32, NaN where a stock lacks this bar or the previous one
+    session: np.ndarray | None = None  # (T,) default: the day
+
+    @property
+    def sess(self) -> np.ndarray:
+        return self.day if self.session is None else self.session
 
     @property
     def days(self) -> pd.DatetimeIndex:
@@ -45,13 +54,15 @@ class Panel:
 
     def save(self, path):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
+        extra = {} if self.session is None else {"session": self.session}
         np.savez(path, times=self.times.asi8, day=self.day, bar=self.bar,
-                 symbols=np.array(self.symbols), returns=self.returns)
+                 symbols=np.array(self.symbols), returns=self.returns, **extra)
 
     @classmethod
     def load(cls, path):
         z = np.load(path, allow_pickle=False)
-        return cls(pd.DatetimeIndex(z["times"]), z["day"], z["bar"], z["symbols"].tolist(), z["returns"])
+        return cls(pd.DatetimeIndex(z["times"]), z["day"], z["bar"], z["symbols"].tolist(), z["returns"],
+                   z["session"] if "session" in z.files else None)
 
 
 def read_closes(data_dir, symbol, timeframe="5Min", expect_feed="sip") -> pd.Series:

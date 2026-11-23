@@ -14,10 +14,20 @@ import torch
 from .dataset import Moments
 
 
+def hold_name(h, timeframe="5Min"):
+    """How a hold of h bars is named: '30 min' for 5-minute bars, '1 d' for daily bars."""
+    return f"{h} d" if timeframe == "1Day" else f"{h * 5} min"
+
+
 # ---- day-block bootstrap ------------------------------------------------------
-def day_weights(n_days, n_boot, rng):
-    draws = rng.integers(0, n_days, (n_boot, n_days))
-    return np.stack([np.bincount(d, minlength=n_days) for d in draws]).astype(np.float64)
+def day_weights(n_days, n_boot, rng, block=1):
+    """Bootstrap weights over days: (n_boot, n_days) counts. block=1 resamples single days (moments on one
+    day share that day's market). block>1 resamples runs of `block` consecutive days, for holds that span
+    several days and so overlap their neighbours. block=1 gives exactly the single-day draws."""
+    block = max(1, min(int(block), n_days))
+    starts = rng.integers(0, n_days - block + 1, (n_boot, int(np.ceil(n_days / block))))
+    idx = (starts[:, :, None] + np.arange(block)).reshape(n_boot, -1)[:, :n_days]
+    return np.stack([np.bincount(d, minlength=n_days) for d in idx]).astype(np.float64)
 
 
 def _day_sums(values, day_codes, n_days):
@@ -82,7 +92,7 @@ def evaluate_arch(preds: dict, test: Moments, holds, panel_days, ecfg, rng):
     level, n_boot, cost = ecfg["level"], ecfg["bootstrap"], ecfg["cost_bps"] * 1e-4
     days, codes = np.unique(test.day, return_inverse=True)
     n_days = len(days)
-    W = day_weights(n_days, n_boot, rng)
+    W = day_weights(n_days, n_boot, rng, ecfg.get("block_days", 1))
     half = np.arange(n_days) < n_days // 2  # first half of the test days
     rows = []
     for j, h in enumerate(holds):
@@ -92,7 +102,8 @@ def evaluate_arch(preds: dict, test: Moments, holds, panel_days, ecfg, rng):
         sse = {v: _day_sums(err[v], codes, n_days) for v in err}
         gain = lambda v, w: 0.5 * np.log((w @ sse["own"]) / (w @ sse[v]))
         ones = np.ones(n_days)
-        row = {"hold_bars": h, "hold": f"{h * 5} min", "moments": int(ok.sum()), "days": n_days}
+        row = {"hold_bars": h, "hold": hold_name(h, ecfg.get("timeframe", "5Min")), "moments": int(ok.sum()),
+               "days": n_days}
         for v in [v for v in ("peers", "random", "corr") if v in preds]:
             row[f"G_{v}"] = float(gain(v, ones))
             row[f"G_{v}_ci"] = interval(gain(v, W), level)

@@ -47,7 +47,8 @@ def build_moments(panel: Panel, peers: PeerTable, lookback=12, stride=6, lag=1, 
     T, S = R.shape
     finite = np.isfinite(R)
     day, bar = panel.day.astype(np.int64), panel.bar.astype(np.int64)
-    last_bar = pd.Series(bar).groupby(day).transform("max").to_numpy()
+    sess = panel.sess.astype(np.int64)  # a lookback or hold never leaves its session
+    last_bar = pd.Series(bar).groupby(sess).transform("max").to_numpy()
 
     rows = np.flatnonzero((bar >= lookback) & ((bar - lookback) % stride == 0)
                           & (bar + lag + min(holds) <= last_bar) & (peers.month_of_day[day] >= 0))
@@ -61,7 +62,7 @@ def build_moments(panel: Panel, peers: PeerTable, lookback=12, stride=6, lag=1, 
         a, b = rows + lag + 1, rows + lag + h  # first and last bar of the hold
         fits = b < T
         b_c = np.minimum(b, T - 1)
-        fits &= (day[b_c] == day[rows]) & (bar[b_c] <= last_bar[rows])
+        fits &= (sess[b_c] == sess[rows]) & (bar[b_c] <= last_bar[rows])
         full = (cnt[b_c + 1] - cnt[a]) == h
         val = (csum[b_c + 1] - csum[a]).astype(np.float32)
         y[:, :, j] = np.where(fits[:, None] & full, val, np.nan)

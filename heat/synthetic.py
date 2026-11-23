@@ -48,3 +48,34 @@ def synthetic_panel(n_days=160, n_clusters=8, cluster_size=5, beta=0.5, lags=(2,
     rel = np.where(finite, r - mkt, np.nan).astype(np.float32)
     return Panel(times, np.repeat(np.arange(n_days), B).astype(np.int32), bar.astype(np.int16),
                  [f"S{i:03d}" for i in range(S)], rel)
+
+
+def synthetic_daily(n_days=3000, n_clusters=8, cluster_size=5, beta=0.5, lags=(2, 3), cross=None, planted=True,
+                    gap_share=0.002, start="2000-01-03", seed=0) -> Panel:
+    """Daily bars, one row per trading day and one session (holds run across days). With `cross` (+1/-1)
+    each cluster's leader drives the next cluster's stocks `lags` days later (invisible to same-day
+    correlation); with `planted` and no `cross`, it drives its own cluster; otherwise nothing transfers."""
+    rng = np.random.default_rng(seed)
+    S = n_clusters * cluster_size
+    cluster = np.repeat(np.arange(n_clusters), cluster_size)
+    market = rng.normal(0, 0.01, (n_days, 1))
+    factor = rng.normal(0, 0.01, (n_days, n_clusters))[:, cluster]
+    idio = rng.normal(0, 0.01, (n_days, S))
+    r = 0.6 * market + 0.8 * factor + idio
+    if cross is not None or planted:
+        for c in range(n_clusters):
+            lead = c * cluster_size
+            dest = ((c + 1) % n_clusters) * cluster_size if cross is not None else lead
+            sign = cross if cross is not None else 1
+            for f in range(dest + 1, dest + cluster_size):
+                for lag in lags:
+                    r[lag:, f] += sign * beta * idio[:-lag, lead]
+    r[0] = np.nan
+    r[rng.random((n_days, S)) < gap_share] = np.nan
+    finite = np.isfinite(r)
+    mkt = np.where(finite, r, 0).sum(1, keepdims=True) / np.maximum(finite.sum(1, keepdims=True), 1)
+    rel = np.where(finite, r - mkt, np.nan).astype(np.float32)
+    days = pd.bdate_range(start, periods=n_days)
+    return Panel(pd.DatetimeIndex(days) + pd.Timedelta(hours=16), np.arange(n_days, dtype=np.int32),
+                 np.arange(n_days, dtype=np.int64), [f"S{i:03d}" for i in range(S)], rel,
+                 session=np.zeros(n_days, dtype=np.int32))

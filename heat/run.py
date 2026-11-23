@@ -10,7 +10,7 @@ import torch
 
 from .dataset import Gather, build_moments, split_by_date, variants_for
 from .device import resolve, to_cpu_state
-from .evaluate import evaluate_arch, heat_flows, verdicts
+from .evaluate import evaluate_arch, heat_flows, hold_name, verdicts
 from .peers import monthly_peers
 from .train import predict, train_variant
 
@@ -26,11 +26,14 @@ def pick_device(name="auto"):
 
 
 def apply_check(cfg):
-    """The --check run's settings: train to 2019, validate on 2020, score 2021, inside the training years."""
-    cfg["split"].update(train_end="2019-12-31", val_end="2020-12-31", test_end="2021-12-31")
+    """The --check run's settings, inside the registered training years: the config's `check_split`, or
+    (5-minute configs) train to 2019, validate on 2020, score 2021."""
+    cs = cfg.get("check_split", {"train_end": "2019-12-31", "val_end": "2020-12-31", "test_end": "2021-12-31"})
+    cfg["split"].update(train_end=cs["train_end"], val_end=cs["val_end"], test_end=cs["test_end"])
     cfg["train"].update(samples_per_epoch=300_000, max_epochs=3, val_samples=100_000)
     cfg["evaluation"].update(bootstrap=300, heat_samples=50_000)
-    cfg["check"] = "2021 (inside the registered training years)"
+    first, last = str(int(cs["val_end"][:4]) + 1), cs["test_end"][:4]
+    cfg["check"] = (first if first == last else f"{first}-{last}") + " (inside the registered training years)"
     return cfg
 
 
@@ -38,7 +41,7 @@ def build_peers(panel, cfg):
     """The month-by-month peer tables the config asks for (E12's correlation rule, or transfer entropy)."""
     pc, mc = cfg["peers"], cfg["moments"]
     return monthly_peers(panel, pc["k"], pc["peer_days"], pc["min_share"], pc["seed"],
-                         select=pc.get("select", "corr"), lookback=mc["lookback"], lag=mc["lag"],
+                         select=pc.get("select", "corr"), lookback=pc.get("te_lookback", mc["lookback"]), lag=mc["lag"],
                          holds=tuple(mc["holds"]), select_hold=pc.get("select_hold", mc["holds"][0]))
 
 
@@ -75,7 +78,8 @@ def run_experiment(panel, cfg, out_dir=None, device="auto", log=print, archs=Non
     out = Path(out_dir) if out_dir else None
     if out:
         out.mkdir(parents=True, exist_ok=True)
-    mc, sc, tc, ec = cfg["moments"], cfg["split"], cfg["train"], cfg["evaluation"]
+    mc, sc, tc = cfg["moments"], cfg["split"], cfg["train"]
+    ec = {**cfg["evaluation"], "timeframe": cfg["data"].get("timeframe", "5Min")}
     holds = mc["holds"]
     registered = list(tc["archs"])
     wanted = list(archs or registered)
@@ -136,7 +140,7 @@ def run_experiment(panel, cfg, out_dir=None, device="auto", log=print, archs=Non
             for j, h in enumerate(holds):
                 f = heat_flows(model, gather, test, info["y_scale"], j, panel.symbols, ec["heat_samples"],
                                device=device, rng=rng)
-                flows.append(f.assign(arch=arch, hold=f"{h * 5} min"))
+                flows.append(f.assign(arch=arch, hold=hold_name(h, cfg["data"].get("timeframe", "5Min"))))
         heat[arch] = pd.concat(flows) if flows else pd.DataFrame()
         if out:
             pd.DataFrame(rows[arch]).to_json(out / f"rows_{arch}.json", orient="records")

@@ -20,7 +20,8 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from heat import config  # noqa: E402
-from heat.data import THESIS_SIP_DIR, Panel, build_panel, load_universe  # noqa: E402
+from heat.data import THESIS_SIP_DIR  # noqa: E402
+from heat.load import get_panel  # noqa: E402
 from heat.dataset import Gather, build_moments, split_by_date  # noqa: E402
 from heat.dataset import variants_for  # noqa: E402
 from heat.run import build_peers, make_gather, pick_device  # noqa: E402
@@ -84,12 +85,7 @@ def main():
     tdir.mkdir(parents=True, exist_ok=True)
 
     panel_path = Path(args.panel) if args.panel else out / "panel.npz"
-    if panel_path.exists():
-        panel = Panel.load(panel_path)
-    else:
-        symbols = load_universe(args.universe or cfg["data"]["universe"])["symbol"].tolist()
-        panel = build_panel(args.data_dir, symbols, cfg["data"]["timeframe"], cfg["data"]["feed"], progress=print)
-        panel.save(panel_path)
+    panel = get_panel(cfg, args.data_dir, panel_path, args.universe)
     print(f"panel: {panel.returns.shape[0]:,} bars x {len(panel.symbols)} stocks")
 
     wanted = args.archs or tc["archs"]

@@ -1,0 +1,99 @@
+# HEAT3: transfer entropy between companies on DAILY data, 2000 onward (Yahoo Finance), as a deep-learning feature.
+#
+# The question of heat_v2, moved from 5-minute bars (2016-2026, thesis SIP data) to 25+ years of daily bars from
+# Yahoo Finance: does one stock's recent return tell us about another stock's return over the next 1 to 10
+# trading days, beyond what that stock's own past tells us, positively or negatively, and is it an edge after
+# 2 bps? heat_v1 and heat_v2 (5-minute) found no edge and no heat transfer; no daily analysis has been run before
+# this config was written. The calendar years 2024 onward were already looked at in 5-minute form by heat_v1;
+# this is a different frequency and question, but it is disclosed.
+#
+# Data (heat/yahoo.py): daily adjusted closes (splits and dividends) of today's S&P 500 members
+# (universe/sp500.csv), from 2000-01-01, via yfinance; one row per trading day; log returns relative to the
+# equal-weighted market over the stocks with a return that day; a daily log return beyond +/-100% is treated as a
+# data error. SURVIVORSHIP: Yahoo has no prices for companies that left the index, so the universe is today's
+# members traced back; stocks enter when their prices start. This biases levels more than market-relative,
+# cross-sectional comparisons, but it must be stated in the write-up.
+#
+# Transfer entropy (heat/te.py), per month from the previous 756 trading days (three years) only: for every
+# source i and target j, how much i's return over its last trading day tells about j's return over the hold
+# (1, 2, 5, 10 days, entered one day after the signal) beyond what j's own last day tells (so j's own reversal is
+# in the baseline). Yesterday's return is the classic daily lead-lag signal (Lo and MacKinlay 1990). Three
+# years because daily data has 78 times fewer points per year than 5-minute data, and short windows let chance
+# rival real relations (heat_v2's 60-day finding). Gaussian TE: rho = partial correlation, TE = -1/2 ln(1-rho^2).
+# Peers = each stock's 5 highest-TE sources at the 1-day hold, positive or negative.
+#
+# Features: the models read the last 20 trading days of the stock and its 5 peers, each peer's signed TE strength
+# at every hold, and the TE-weighted peer signal (as heat_v2). Variants, same architecture, initial weights,
+# batches and budget: own (no peers), peers (TE), random (5 random stocks, monthly), corr (5 most correlated).
+# Hyperparameters: heat_v1's defaults (tuning on validation days kept them for every model).
+#
+# Split by trading day: train to 2014-12-31 (peers start once three years of history exist, so training starts
+# in 2003), validation 2015-2018, test 2019-01-01 onward. Embargo of 11 trading days before validation and before
+# test: a hold enters one day after its signal and lasts up to 10 days, so no label crosses into the next set.
+# Intervals resample blocks of 21 consecutive trading days, because holds of several days overlap.
+#
+# PROTOCOL, fixed before any daily result (2026-11-23). For each architecture and hold (12 cells), on the test
+# days only (2019-01-01 onward), with 99% block-bootstrap intervals:
+#   1. net_positive: the TE-peer model's quintile long-short book earns more than 2 bps per position, net.
+#   2. beats_no_peers: its net minus the no-peer model's net, interval above zero.
+#   3. beats_random_peers: G(TE peers) minus G(random peers), interval above zero.
+#   4. beats_correlation_peers: G(TE peers) minus G(correlation peers), interval above zero.
+#   5. both_halves_positive: the net is above zero in both halves of the test days (point estimates).
+#   6. fdr: Benjamini-Hochberg at q = 0.05 over the 12 cells, on the block-bootstrap p-value of check 1.
+# A cell with all six is an EDGE; any other cell is NO EDGE, with the failed checks named.
+# Reported, not decisive: heat transfer (G(TE peers) > 0 and beats random peers), G for every variant, gross
+# returns, rank IC, the share of negative TE relations, the heat map, and (exploratory) release-day splits.
+experiment: heat_v3
+
+data:
+  source: yahoo
+  universe: universe/sp500.csv
+  timeframe: 1Day
+  start: "2000-01-01"
+
+split:  # whole trading days, in time order
+  train_end: "2014-12-31"
+  val_end: "2018-12-31"
+  embargo_days: 11
+
+check_split:  # the --check run, inside the training years: train to 2010, validate 2011-2012, score 2013-2014
+  train_end: "2010-12-31"
+  val_end: "2012-12-31"
+  test_end: "2014-12-31"
+
+peers:
+  select: te
+  select_hold: 1  # peers ranked by TE at the 1-day hold; features at every hold
+  te_lookback: 1  # the source's (and the target's own) last trading day
+  k: 5
+  peer_days: 756  # three trading years
+  min_share: 0.8
+  seed: 0
+
+moments:
+  lookback: 20  # trading days of the stock and its peers that the models read
+  stride: 1  # a moment every trading day
+  lag: 1  # enter one day after the signal day
+  holds: [1, 2, 5, 10]  # trading days
+
+train:
+  archs: [bilstm, resnet1d, transformer]
+  size: 64
+  lr: 0.001
+  weight_decay: 0.0001
+  batch: 4096
+  samples_per_epoch: 1000000
+  max_epochs: 30
+  patience: 4
+  val_samples: 300000
+  seed: 0
+
+evaluation:
+  level: 0.99
+  bootstrap: 2000
+  block_days: 21  # resample runs of 21 trading days: holds up to 10 days overlap their neighbours
+  cost_bps: 2.0
+  q: 0.2  # quintile book
+  min_stocks: 20  # a moment needs this many stocks
+  fdr_q: 0.05
+  heat_samples: 300000

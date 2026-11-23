@@ -79,9 +79,10 @@ def load_or_fetch(path, start="2016-01-01", end="2026-12-31", log=print) -> pd.D
     return cal
 
 
-def moment_masks(test, panel, calendar: pd.DataFrame, holds, lag=1):
+def moment_masks(test, panel, calendar: pd.DataFrame, holds, lag=1, timeframe="5Min"):
     """{name: bool mask over the test moments}. Day masks for every event, an "any release" day mask,
-    "no release" days, and for FOMC, per hold, whether the hold spans the 14:00 release."""
+    "no release" days, and (5-minute bars only) for FOMC, per hold, whether the hold spans the 14:00
+    release. With daily bars a moment's day is the day of its signal, at the close."""
     dates = pd.DatetimeIndex(panel.days[test.day]).strftime("%Y-%m-%d").to_numpy()
     masks = {}
     any_day = np.zeros(len(test), bool)
@@ -91,6 +92,8 @@ def moment_masks(test, panel, calendar: pd.DataFrame, holds, lag=1):
         any_day |= on
     masks["any release day"] = any_day
     masks["no release day"] = ~any_day
+    if timeframe == "1Day":
+        return masks
     fomc = masks["fomc days"]
     release_bar = (14 * 60 - (9 * 60 + 30)) // 5  # the bar that starts at 14:00
     bar = panel.bar[test.t].astype(int)

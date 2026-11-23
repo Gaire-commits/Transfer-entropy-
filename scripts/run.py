@@ -17,7 +17,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from heat import config  # noqa: E402
-from heat.data import THESIS_SIP_DIR, Panel, build_panel, load_universe  # noqa: E402
+from heat.data import THESIS_SIP_DIR  # noqa: E402
+from heat.load import get_panel  # noqa: E402
 from heat.run import apply_check, run_experiment  # noqa: E402
 from heat.viz import write_report  # noqa: E402
 
@@ -48,14 +49,7 @@ def main():
     if args.check:
         apply_check(cfg)
         out = out / "check"
-    if panel_path.exists():
-        panel = Panel.load(panel_path)
-        print(f"panel loaded: {panel.returns.shape[0]:,} bars x {len(panel.symbols)} stocks")
-    else:
-        symbols = load_universe(args.universe or cfg["data"]["universe"])["symbol"].tolist()
-        panel = build_panel(args.data_dir, symbols, cfg["data"]["timeframe"], cfg["data"]["feed"], progress=print)
-        panel.save(panel_path)
-        print(f"panel built and saved: {panel.returns.shape[0]:,} bars x {len(panel.symbols)} stocks")
+    panel = get_panel(cfg, args.data_dir, panel_path, args.universe)
 
     # Architectures already scored in <out> are skipped, so a dropped session just resumes.
     run_experiment(panel, cfg, out, args.device, archs=args.archs, rerun=args.rerun, cache_dir=cache_dir)

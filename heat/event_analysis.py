@@ -34,9 +34,10 @@ def event_table(out_dir, panel, cfg, calendar, cache_dir=None, bootstrap=1000, m
     peers = cache.cached_peers(panel, cfg, cache_dir, lambda: build_peers(panel, cfg), log)
     moments = build_moments(panel, peers, mc["lookback"], mc["stride"], mc["lag"], holds)
     _, _, test = split_by_date(moments, panel, sc["train_end"], sc["val_end"], sc["embargo_days"], sc.get("test_end"))
-    masks = moment_masks(test, panel, calendar, holds, mc["lag"])
+    tf = cfg["data"].get("timeframe", "5Min")
+    masks = moment_masks(test, panel, calendar, holds, mc["lag"], tf)
     panel_fp = cache.panel_fingerprint(panel)
-    ecfg = {**cfg["evaluation"], "bootstrap": bootstrap}
+    ecfg = {**cfg["evaluation"], "bootstrap": bootstrap, "timeframe": tf}
     rows = []
     for arch in cfg["train"]["archs"]:
         tca = {**cfg["train"], **cfg["train"].get("per_arch", {}).get(arch, {})}

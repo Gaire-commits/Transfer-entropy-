@@ -26,10 +26,10 @@ def window_returns(panel: Panel, lookback=12, lag=1, hold=6):
     R = np.nan_to_num(panel.returns.astype(np.float64))
     T = len(R)
     csum = np.vstack([np.zeros((1, R.shape[1])), np.cumsum(R, axis=0)])
-    day, bar = panel.day.astype(np.int64), panel.bar.astype(np.int64)
+    sess, bar = panel.sess.astype(np.int64), panel.bar.astype(np.int64)
     last = np.zeros(T, np.int64)
-    np.maximum.at(last, day, bar)  # last[d] = last bar index of day d
-    rows = np.flatnonzero((bar >= lookback) & (bar + lag + hold <= last[day]))
+    np.maximum.at(last, sess, bar)  # last[s] = last bar index of session s
+    rows = np.flatnonzero((bar >= lookback) & (bar + lag + hold <= last[sess]))
     past = csum[rows + 1] - csum[rows + 1 - lookback]
     future = csum[rows + lag + hold + 1] - csum[rows + lag + 1]
     return past, future, rows

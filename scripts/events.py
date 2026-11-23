@@ -13,7 +13,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from heat import config  # noqa: E402
-from heat.data import THESIS_SIP_DIR, Panel, build_panel, load_universe  # noqa: E402
+from heat.data import THESIS_SIP_DIR  # noqa: E402
+from heat.load import get_panel  # noqa: E402
 from heat.event_analysis import event_table  # noqa: E402
 from heat.events import load_or_fetch  # noqa: E402
 from heat.run import apply_check  # noqa: E402
@@ -38,12 +39,7 @@ def main():
     if args.check:
         apply_check(cfg)
     panel_path = Path(args.panel) if args.panel else out / "panel.npz"
-    if panel_path.exists():
-        panel = Panel.load(panel_path)
-    else:
-        symbols = load_universe(args.universe or cfg["data"]["universe"])["symbol"].tolist()
-        panel = build_panel(args.data_dir, symbols, cfg["data"]["timeframe"], cfg["data"]["feed"], progress=print)
-        panel.save(panel_path)
+    panel = get_panel(cfg, args.data_dir, panel_path, args.universe)
     calendar = load_or_fetch(args.calendar or str(out / "events_calendar.csv"))
     table = event_table(target, panel, cfg, calendar, Path(args.cache_dir) if args.cache_dir else out / "cache",
                         bootstrap=args.bootstrap)
