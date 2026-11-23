@@ -202,7 +202,8 @@ def report_md(table, heat, cfg, counts, complete=True, have=(), negative_share=N
                   "against the peer) and the rest positive.", ""]
     n = lambda k: f"{counts[k]:,}" if k in counts else "?"
     lines += [f"Moments: train {n('train')}, val {n('val')}, test {n('test')} (scored days: after "
-              f"{cfg['split']['val_end']}). Intervals: {int(ec['level'] * 100)}% day-block. "
+              f"{cfg['split']['val_end']}). Intervals: {int(ec['level'] * 100)}% "
+              + (f"{ec['block_days']}-day-block" if ec.get("block_days", 1) > 1 else "day-block") + " bootstrap. "
               f"Cost: {ec['cost_bps']:.0f} bps per position.", "",
               "| arch | hold | G peers (nats) | G peers − random | net bps (peers) | net − no peers | IC | verdict |",
               "|---|---|---|---|---|---|---|---|"]
@@ -220,7 +221,7 @@ def report_md(table, heat, cfg, counts, complete=True, have=(), negative_share=N
                      f"{r['ic_peers']:+.4f} | {verdict} |")
     if complete:
         lines += ["", f"**Cells with an edge: {int((table['verdict'] == 'EDGE').sum())} of {len(table)}.** "
-                  "Cells with heat transfer (correlated peers beat random peers and no peers): "
+                  f"Cells with heat transfer ({'transfer-entropy' if by_te else 'correlated'} peers beat random peers and no peers): "
                   f"{int(table['heat_transfer'].sum())} of {len(table)}."]
     if len(heat):
         if "lcb" in heat:
