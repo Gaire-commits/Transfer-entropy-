@@ -11,10 +11,11 @@ from heat.models import make_model
 def test_cpu_passes_and_unavailable_devices_are_skipped():
     log = []
     best, rows = self_test(archs=("resnet1d",), candidates=("cuda", "xla", "cpu"), steps=2, batch=64, log=log.append)
-    assert best == {"resnet1d": "cpu"}
-    if not torch.cuda.is_available():
-        assert any(m.startswith("  cuda: not available") for m in log)
-    assert any(r[1] == "cpu" and r[2] is not None for r in rows)
+    assert any(r[1] == "cpu" and r[2] is not None for r in rows)  # the CPU always works
+    if torch.cuda.is_available():  # e.g. Colab's A100: the GPU is used if it passes, else the CPU
+        assert best["resnet1d"] in ("cuda", "cuda:0", "cpu")
+    else:
+        assert best == {"resnet1d": "cpu"} and any(m.startswith("  cuda: not available") for m in log)
 
 
 def test_device_that_disagrees_with_cpu_is_rejected(monkeypatch):
