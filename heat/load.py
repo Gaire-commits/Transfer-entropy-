@@ -11,6 +11,7 @@ def get_panel(cfg, data_dir, panel_path, universe=None, log=print) -> Panel:
     panel_path = Path(panel_path)
     if panel_path.exists():
         panel = Panel.load(panel_path)
+        check_panel(panel, cfg, panel_path)
         log(f"panel loaded: {panel.returns.shape[0]:,} rows x {len(panel.symbols)} stocks")
         return panel
     d = cfg["data"]
@@ -26,3 +27,15 @@ def get_panel(cfg, data_dir, panel_path, universe=None, log=print) -> Panel:
     panel.save(panel_path)
     log(f"panel built and saved: {panel.returns.shape[0]:,} rows x {len(panel.symbols)} stocks")
     return panel
+
+
+def check_panel(panel, cfg, where="the panel"):
+    """Stop if the panel's bars don't match the config's: a daily panel run with 5-minute settings (or the
+    reverse) produces numbers that mean nothing, without any error to say so."""
+    daily_panel = panel.session is not None
+    daily_cfg = cfg["data"].get("timeframe", "5Min") == "1Day"
+    if daily_panel != daily_cfg:
+        have = "daily" if daily_panel else "5-minute"
+        want = "daily" if daily_cfg else "5-minute"
+        raise SystemExit(f"{where} holds {have} bars but {cfg['experiment']} expects {want} bars. Pass the config "
+                         f"that matches the data (--config), or the panel built for this experiment (--panel).")

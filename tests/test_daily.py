@@ -92,3 +92,12 @@ def test_daily_nothing_planted_no_edge():
     p = synthetic_daily(n_days=2800, planted=False, seed=3)
     t, _ = run_experiment(p, _daily_cfg(p), log=lambda m: None)
     assert (t["verdict"] != "EDGE").all()
+
+
+def test_mismatched_panel_and_config_are_refused(tmp_path):
+    from heat.load import get_panel
+    daily = synthetic_daily(n_days=100, n_clusters=2, planted=False)
+    daily.save(tmp_path / "daily.npz")
+    with pytest.raises(SystemExit, match="daily bars but heat_v1 expects 5-minute"):
+        get_panel(config.load("configs/heat_v1.yaml"), "x", tmp_path / "daily.npz", log=lambda m: None)
+    assert get_panel(config.load("configs/heat_v3.yaml"), "x", tmp_path / "daily.npz", log=lambda m: None).session is not None

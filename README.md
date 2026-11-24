@@ -47,6 +47,12 @@ This replicates E12 (correlated peers don't lead) with deep models. The run, wit
 
 **Tuning (2026-10-22, validation days only):** no setting beat the defaults beyond seed noise for any model.
 
+**Disclosure (2026-11-23).** A notebook tuning cell ran heat_v1's 5-minute settings on the heat_v3 daily
+panel (the cell did not pass the experiment's config). It validated on 2022–2023 daily data, inside heat_v3's
+test period, and kept the defaults; it produced no heat_v3 result, and heat_v3's rule (default settings) had
+been frozen before. The tuning cells were removed and every script now refuses a panel whose bars don't match
+the config.
+
 **Disclosure.** HEAT2 was registered after HEAT1 had scored the test days (see its config); its test is a second
 look at the same days, and its untouched confirmation is a forward test on trading days after 2026-10-23.
 
