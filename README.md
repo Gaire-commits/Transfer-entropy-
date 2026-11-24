@@ -45,6 +45,17 @@ pairs clear the heat-map screen, against about 93 expected by chance with optimi
 This replicates E12 (correlated peers don't lead) with deep models. The run, with its outputs, is
 [`notebooks/runs/2026-10-22_heat_v1_registered_run.ipynb`](notebooks/runs/2026-10-22_heat_v1_registered_run.ipynb).
 
+**HEAT3, registered run (2026-11-23, L4 GPU; test days 2019-01-02 onward, 966,370 test moments, daily bars).**
+**0 of 12 cells have an edge; 0 of 12 show heat transfer.** Transfer-entropy peers make the forecast *worse*:
+G(TE peers) is below zero in all 12 cells (interval below zero in 11), and below random peers in every cell (interval
+below zero in 6). On validation too, every peer variant's best loss is above the no-peer model's: the extra peer
+inputs are fitted noise. TE peers beat correlation peers only for the CNN at 5 and 10 days,
+where both are worse than no peers. The long-short book nets between -2.6 and +3.2 bps with every interval
+spanning or below zero, and its point estimate is below the no-peer model's net in every cell. Of the TE peers, 49% are negative
+relations. 1,014 of 116,623 pairs clear the heat-map screen (0.9%): not a finding. The check run (2013–2014)
+gave the same picture. The run, with its outputs, is
+[`notebooks/runs/2026-11-23_heat_v3_registered_run.ipynb`](notebooks/runs/2026-11-23_heat_v3_registered_run.ipynb).
+
 **Tuning (2026-10-22, validation days only):** no setting beat the defaults beyond seed noise for any model.
 
 **Disclosure (2026-11-23).** A notebook tuning cell ran heat_v1's 5-minute settings on the heat_v3 daily
